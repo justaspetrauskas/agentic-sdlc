@@ -19,7 +19,7 @@ Work step by step. Show the plan first and ask for a yes before changing anythin
 6. Create the labels from `.github/labels.yml` using `gh label create <name> --color <color> --description <text> --force`.
 7. If `.sdlc/config.yml` already has `control_issue`, skip this step. Otherwise create an issue titled "SDLC control" with a short body explaining that adding the PAUSE label stops the pipeline.
    Write its number into `.sdlc/config.yml` as `control_issue`.
-8. Commit with the message "Add agentic SDLC core", push the branch, and open a PR with `gh pr create`. Do not merge it.
+8. Write `.sdlc/manifest.json` with the plugin version and the sha256 of every file you installed. Then commit with the message "Add agentic SDLC core", push the branch, and open a PR with `gh pr create`. Do not merge it.
 9. Ask whether to set branch protection on the default branch: require a pull request, require code owner reviews,
    do not enforce for admins. If the user agrees, apply it with `gh api`. If GitHub refuses (some plans do not offer
    branch protection on private repos), say so plainly and do not try workarounds.
