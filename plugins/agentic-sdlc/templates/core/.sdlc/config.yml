@@ -1,0 +1,21 @@
+project: "{{PROJECT_NAME}}"
+type: web            # web | mobile | claude-plugin | chrome-ext
+dry_run: true        # agents log what they would do, but change nothing
+timezone: Europe/Copenhagen
+night_window: { start: "01:00", end: "06:00" }
+limits:
+  active_items: 1
+  daily_runs: 6
+  retries: 2
+gates:
+  protected_paths:
+    - ".github/**"
+    - ".sdlc/**"
+    - "docs/constitution.md"
+    - "**/migrations/**"
+    - "package.json"
+    - "package-lock.json"
+auto_merge:
+  enabled: false     # stays off until the trust ladder allows it
+notify:
+  url: ""            # optional notification service

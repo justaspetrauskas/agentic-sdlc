@@ -1,0 +1,12 @@
+name: "ux"
+description: "Create a ux item"
+labels: ["type:ux", "state:proposed"]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: "What and why", description: "Plain words. A person should understand this without context." }
+    validations: { required: true }
+  - type: textarea
+    id: evidence
+    attributes: { label: "Evidence", description: "The written standard it breaks, steps to reproduce, or the goal it serves." }
+    validations: { required: true }

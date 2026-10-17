@@ -1,0 +1,6 @@
+/.github/              @{{GITHUB_USER}}
+/.sdlc/                @{{GITHUB_USER}}
+/docs/constitution.md  @{{GITHUB_USER}}
+**/migrations/         @{{GITHUB_USER}}
+/package.json          @{{GITHUB_USER}}
+/package-lock.json     @{{GITHUB_USER}}

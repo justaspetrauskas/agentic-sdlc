@@ -1,0 +1,15 @@
+- { name: "type:fix",           color: "d73a4a", description: "Deviation from a written standard, with evidence" }
+- { name: "type:ux",            color: "a2eeef", description: "UX/UI improvement" }
+- { name: "type:design",        color: "7057ff", description: "Design update" }
+- { name: "type:idea",          color: "fbca04", description: "New idea" }
+- { name: "state:proposed",     color: "ededed", description: "Waiting for your approval" }
+- { name: "state:approved",     color: "0e8a16", description: "Approved, ready to be picked" }
+- { name: "state:specifying",   color: "c5def5", description: "Spec and clarify in progress" }
+- { name: "state:planned",      color: "c5def5", description: "Plan approved, tasks created" }
+- { name: "state:building",     color: "1d76db", description: "Being built" }
+- { name: "state:in-review",    color: "5319e7", description: "PR open" }
+- { name: "state:done",         color: "0e8a16", description: "Merged and deployed" }
+- { name: "state:blocked",      color: "b60205", description: "Stopped, needs a decision" }
+- { name: "needs-you",          color: "b60205", description: "Waiting for a human" }
+- { name: "critical",           color: "b60205", description: "Broken main, failed deploy or security" }
+- { name: "PAUSE",              color: "000000", description: "Kill switch (control issue only)" }
