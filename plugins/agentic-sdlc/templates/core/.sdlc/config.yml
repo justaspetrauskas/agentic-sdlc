@@ -19,3 +19,7 @@ auto_merge:
   enabled: false     # stays off until the trust ladder allows it
 notify:
   url: ""            # optional notification service
+branches:
+  pattern: "<kind>/<area>/<issue>-<slug>"
+  kinds: [fix, update, chore]
+  areas: [ux, ui, technical, docs]

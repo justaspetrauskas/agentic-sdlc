@@ -13,7 +13,7 @@ Work step by step. Show the plan first and ask for a yes before changing anythin
 3. Ask for the project name (default: the repo name) and the project type: web, mobile, claude-plugin or chrome-ext (default: web).
 4. List which template files would be created and which already exist. Never overwrite an existing file.
    Report conflicts and skip them. Wait for the user to confirm.
-5. Create the branch `sdlc/init`. Copy the files, keeping their paths. Replace `{{PROJECT_NAME}}` with the project name
+5. Create the branch `chore/technical/sdlc-init`. Copy the files, keeping their paths. Replace `{{PROJECT_NAME}}` with the project name
    and `{{GITHUB_USER}}` with the repo owner. Set `type:` in `.sdlc/config.yml` to the chosen type.
    Keep `dry_run: true`.
 6. Create the labels from `.github/labels.yml` using `gh label create <name> --color <color> --description <text> --force`.
