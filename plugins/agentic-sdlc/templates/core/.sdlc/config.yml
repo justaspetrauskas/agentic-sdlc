@@ -22,4 +22,4 @@ notify:
 branches:
   pattern: "<kind>/<area>/<issue>-<slug>"
   kinds: [fix, update, chore]
-  areas: [ux, ui, technical, docs]
+  areas: [ux, technical, docs]
