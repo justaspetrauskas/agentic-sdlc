@@ -1,0 +1,42 @@
+name: sdlc-watchdog
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      simulate:
+        description: "Test mode: ignore the owner exception for the latest commit"
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+          SIMULATE: ${{ inputs.simulate }}
+        run: |
+          if [ "$ACTOR" = "$OWNER" ] && [ "$SIMULATE" != "true" ]; then
+            echo "Push by the owner. Allowed."; exit 0
+          fi
+          merged=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)] | length')
+          if [ "$merged" -gt 0 ]; then
+            echo "Commit came from a merged PR. Allowed."; exit 0
+          fi
+          issue=$(yq '.control_issue' .sdlc/config.yml)
+          gh issue edit "$issue" --add-label PAUSE
+          gh issue create \
+            --title "Critical: push to main without a merged PR" \
+            --label critical --label needs-you \
+            --body "Commit $SHA was pushed to main by $ACTOR without a merged pull request. The pipeline is paused (PAUSE on #$issue). Check the commit, revert it if needed, then remove PAUSE to resume."
+          echo "::error::Unreviewed push to main. Pipeline paused."
+          exit 1
