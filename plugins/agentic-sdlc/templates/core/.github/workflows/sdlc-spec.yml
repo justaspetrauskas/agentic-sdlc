@@ -1,0 +1,85 @@
+name: sdlc-spec
+on:
+  issues:
+    types: [labeled]
+concurrency:
+  group: sdlc-active
+  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+jobs:
+  spec:
+    if: github.event.label.name == 'state:approved' && github.event.sender.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+
+      - if: steps.guard.outputs.paused == 'true'
+        run: echo "Pipeline is paused. Nothing to do."
+
+      - name: Spec (dry run)
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/spec.md.
+            Issue number: ${{ github.event.issue.number }}
+            Mode: dry-run.
+          claude_args: >-
+            --model opus
+            --max-turns 25
+            --allowedTools "Read,Write,Glob,Grep,Bash(gh issue view:*)"
+
+      - name: Show preview
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run == 'true'
+        run: |
+          {
+            echo "## Spec preview (dry run)"
+            cat .sdlc/tmp/spec-preview.md 2>/dev/null || echo "No spec was written."
+            echo
+            echo "## Open questions"
+            cat .sdlc/tmp/questions.md 2>/dev/null || echo "None."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mark as specifying
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: gh issue edit "$ISSUE" --remove-label state:approved --add-label state:specifying
+
+      - name: Spec (live)
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/spec.md.
+            Issue number: ${{ github.event.issue.number }}
+            Mode: live.
+          claude_args: >-
+            --model opus
+            --max-turns 30
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
+
+      - name: Usage report
+        if: always() && steps.guard.outputs.paused != 'true'
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$f" ]; then
+            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- input tokens: \(.usage.input_tokens)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          fi
