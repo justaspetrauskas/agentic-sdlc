@@ -32,3 +32,9 @@ so write plain, short sentences.
   `chore/docs/<number>-spec-<slug>`, commit only that file, push, and open a PR titled
   "Spec: <issue title> (#<number>)". If there are open questions, post them as one comment
   on the issue (numbered, each with its default) and add the label `needs-you`.
+
+## Stack
+If the Stack section of `docs/constitution.md` is empty or still a placeholder, add an open question
+asking which stack to use. Offer the choices from `.sdlc/stack-options.yml`: one frontend option, and a
+backend option only if the feature needs a server. Do not invent other options and do not pick one
+silently. Never edit the constitution yourself.

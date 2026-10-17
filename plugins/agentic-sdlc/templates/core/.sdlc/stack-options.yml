@@ -1,0 +1,10 @@
+frontend:
+  - React + Vite + TypeScript
+  - Vue + Vite + TypeScript
+  - Plain TypeScript + Vite (no framework)
+backend:
+  - none
+  - Node + Express
+  - Node + Fastify
+  - Node + Hono
+  - Node + NestJS
