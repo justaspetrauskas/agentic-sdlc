@@ -1,0 +1,7 @@
+{
+  "name": "agentic-sdlc-marketplace",
+  "owner": { "name": "Justas" },
+  "plugins": [
+    { "name": "agentic-sdlc", "source": "./plugins/agentic-sdlc", "description": "Agentic SDLC pipeline" }
+  ]
+}
