@@ -1,0 +1,25 @@
+name: sdlc-guard
+description: Report whether the pipeline is paused and whether it is in dry-run mode
+outputs:
+  paused:
+    description: "true if the control issue has the PAUSE label"
+    value: ${{ steps.check.outputs.paused }}
+  dry_run:
+    description: "value of dry_run in .sdlc/config.yml"
+    value: ${{ steps.check.outputs.dry_run }}
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        issue=$(yq '.control_issue' .sdlc/config.yml)
+        dry=$(yq '.dry_run' .sdlc/config.yml)
+        labels=$(gh issue view "$issue" --json labels --jq '.labels[].name')
+        if echo "$labels" | grep -qx "PAUSE"; then paused=true; else paused=false; fi
+        echo "paused=$paused" >> "$GITHUB_OUTPUT"
+        echo "dry_run=$dry" >> "$GITHUB_OUTPUT"
+        if [ "$paused" = "true" ]; then echo "::warning::Pipeline is paused"; fi

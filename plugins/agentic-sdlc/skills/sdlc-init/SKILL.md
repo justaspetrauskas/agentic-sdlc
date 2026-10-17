@@ -17,7 +17,7 @@ Work step by step. Show the plan first and ask for a yes before changing anythin
    and `{{GITHUB_USER}}` with the repo owner. Set `type:` in `.sdlc/config.yml` to the chosen type.
    Keep `dry_run: true`.
 6. Create the labels from `.github/labels.yml` using `gh label create <name> --color <color> --description <text> --force`.
-7. Create an issue titled "SDLC control" with a short body explaining that adding the PAUSE label stops the pipeline.
+7. If `.sdlc/config.yml` already has `control_issue`, skip this step. Otherwise create an issue titled "SDLC control" with a short body explaining that adding the PAUSE label stops the pipeline.
    Write its number into `.sdlc/config.yml` as `control_issue`.
 8. Commit with the message "Add agentic SDLC core", push the branch, and open a PR with `gh pr create`. Do not merge it.
 9. Ask whether to set branch protection on the default branch: require a pull request, require code owner reviews,

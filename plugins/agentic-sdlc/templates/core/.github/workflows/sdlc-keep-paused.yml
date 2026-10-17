@@ -1,0 +1,17 @@
+name: sdlc-keep-paused
+on:
+  issues:
+    types: [unlabeled]
+permissions:
+  issues: write
+  contents: read
+jobs:
+  keep-paused:
+    if: github.event.label.name == 'PAUSE' && github.event.issue.title == 'SDLC control' && github.event.sender.login != github.repository_owner
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: gh issue edit "$ISSUE" --add-label PAUSE

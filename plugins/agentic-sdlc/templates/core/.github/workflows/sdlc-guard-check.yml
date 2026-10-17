@@ -1,0 +1,13 @@
+name: sdlc-guard-check
+on: workflow_dispatch
+permissions:
+  contents: read
+  issues: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+      - run: echo "paused=${{ steps.guard.outputs.paused }} dry_run=${{ steps.guard.outputs.dry_run }}"
