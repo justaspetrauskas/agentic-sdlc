@@ -41,7 +41,7 @@ then the numbered questions with their defaults, then this line:
 - **live**: write the spec to `docs/specs/<number>-<slug>.md`. Create the branch
   `chore/docs/<number>-spec-<slug>`, commit only that file, push, and open a PR titled
   "Spec: <issue title> (#<number>)" whose body says "Spec for #<number>. Merge to approve.".
-  If there are open questions, post the questions comment and add the label `needs-you`.
+  Do not post questions or add labels. The product lead handles the open questions next.
 - **update**: you are on the spec branch, and the owner has replied. Read the spec file and the latest
   questions comment, then the owner's replies after it. Apply each answer to the spec: move it into the
   acceptance criteria or assumptions, and remove it from Open questions. Questions the owner did not
