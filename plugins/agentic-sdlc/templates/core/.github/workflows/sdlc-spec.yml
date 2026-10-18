@@ -77,17 +77,18 @@ jobs:
             Follow .sdlc/prompts/spec.md.
             Issue number: ${{ github.event.issue.number }}
             Mode: live.
+            Product lead: ${{ steps.guard.outputs.product_lead }}
           claude_args: >-
             --model opus
             --max-turns 30
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh pr create:*)"
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
 
       - name: Keep writer usage
         if: always() && steps.guard.outputs.paused != 'true'
         run: mv "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/writer-usage.json" 2>/dev/null || true
 
       - name: Product lead
-        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true' && steps.guard.outputs.product_lead != 'false'
         uses: anthropics/claude-code-action@v1
         env:
           GH_TOKEN: ${{ github.token }}

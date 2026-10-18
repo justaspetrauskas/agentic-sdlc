@@ -59,17 +59,18 @@ jobs:
             Issue number: ${{ github.event.issue.number }}
             Spec branch: ${{ steps.find.outputs.branch }} (already checked out).
             Mode: update.
+            Product lead: ${{ steps.guard.outputs.product_lead }}
           claude_args: >-
             --model opus
             --max-turns 25
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*)"
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
 
       - name: Keep writer usage
         if: always() && steps.find.outputs.branch != '' && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
         run: mv "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/writer-usage.json" 2>/dev/null || true
 
       - name: Product lead
-        if: steps.find.outputs.branch != '' && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        if: steps.find.outputs.branch != '' && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true' && steps.guard.outputs.product_lead != 'false'
         uses: anthropics/claude-code-action@v1
         env:
           GH_TOKEN: ${{ github.token }}
