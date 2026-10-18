@@ -5,6 +5,7 @@
 - { name: "state:proposed",     color: "ededed", description: "Waiting for your approval" }
 - { name: "state:approved",     color: "0e8a16", description: "Approved, ready to be picked" }
 - { name: "state:specifying",   color: "c5def5", description: "Spec and clarify in progress" }
+- { name: "state:spec-approved", color: "0e8a16", description: "Spec merged, ready to plan" }
 - { name: "state:planned",      color: "c5def5", description: "Plan approved, tasks created" }
 - { name: "state:building",     color: "1d76db", description: "Being built" }
 - { name: "state:in-review",    color: "5319e7", description: "PR open" }

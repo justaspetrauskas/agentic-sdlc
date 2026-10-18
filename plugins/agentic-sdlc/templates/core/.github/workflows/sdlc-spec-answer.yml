@@ -1,0 +1,70 @@
+name: sdlc-spec-answer
+on:
+  issue_comment:
+    types: [created]
+concurrency:
+  group: sdlc-active
+  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+jobs:
+  answer:
+    if: >-
+      !github.event.issue.pull_request &&
+      github.event.comment.user.login == github.repository_owner &&
+      contains(github.event.issue.labels.*.name, 'state:specifying')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Find the spec branch
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          branch=$(gh pr list --state open --json headRefName \
+            --jq ".[] | select(.headRefName | startswith(\"chore/docs/${ISSUE}-spec-\")) | .headRefName" | head -n1)
+          if [ -z "$branch" ]; then echo "No open spec PR for #$ISSUE."; fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - if: steps.find.outputs.branch != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.find.outputs.branch }}
+
+      - id: guard
+        if: steps.find.outputs.branch != ''
+        uses: ./.github/actions/sdlc-guard
+
+      - if: steps.find.outputs.branch != '' && steps.guard.outputs.paused == 'true'
+        run: echo "Pipeline is paused. Nothing to do."
+
+      - name: Apply answers
+        if: steps.find.outputs.branch != '' && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/spec.md.
+            Issue number: ${{ github.event.issue.number }}
+            Spec branch: ${{ steps.find.outputs.branch }} (already checked out).
+            Mode: update.
+          claude_args: >-
+            --model opus
+            --max-turns 25
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
+
+      - name: Usage report
+        if: always() && steps.find.outputs.branch != ''
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$f" ]; then
+            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          fi

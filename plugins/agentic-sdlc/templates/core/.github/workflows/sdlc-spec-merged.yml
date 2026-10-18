@@ -1,0 +1,23 @@
+name: sdlc-spec-merged
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  issues: write
+  contents: read
+jobs:
+  approve:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'chore/docs/')
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          issue=$(echo "$HEAD" | sed -nE 's#^chore/docs/([0-9]+)-spec-.*#\1#p')
+          if [ -z "$issue" ]; then echo "Not a spec branch."; exit 0; fi
+          gh issue edit "$issue" --add-label state:spec-approved
+          gh issue edit "$issue" --remove-label state:specifying || true
+          gh issue edit "$issue" --remove-label needs-you || true
+          gh issue comment "$issue" --body "Spec approved (PR merged). Ready for planning."

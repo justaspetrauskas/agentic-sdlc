@@ -57,7 +57,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
-        run: gh issue edit "$ISSUE" --remove-label state:approved --add-label state:specifying
+        run: |
+          gh issue edit "$ISSUE" --add-label state:specifying
+          gh issue edit "$ISSUE" --remove-label state:approved || true
+          gh issue edit "$ISSUE" --remove-label state:proposed || true
 
       - name: Spec (live)
         if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
@@ -81,5 +84,5 @@ jobs:
           f="$RUNNER_TEMP/claude-execution-output.json"
           if [ -f "$f" ]; then
             echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- input tokens: \(.usage.input_tokens)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
+            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
           fi
