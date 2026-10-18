@@ -58,13 +58,38 @@ jobs:
           claude_args: >-
             --model opus
             --max-turns 25
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*)"
+
+      - name: Keep writer usage
+        if: always() && steps.find.outputs.branch != '' && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        run: mv "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/writer-usage.json" 2>/dev/null || true
+
+      - name: Product lead
+        if: steps.find.outputs.branch != '' && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/product-lead.md.
+            Issue number: ${{ github.event.issue.number }}
+            Spec branch: ${{ steps.find.outputs.branch }} (already checked out).
+          claude_args: >-
+            --model opus
+            --max-turns 25
             --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
+
+      - name: Keep product-lead usage
+        if: always() && steps.find.outputs.branch != '' && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        run: mv "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/product-lead-usage.json" 2>/dev/null || true
 
       - name: Usage report
         if: always() && steps.find.outputs.branch != ''
         run: |
-          f="$RUNNER_TEMP/claude-execution-output.json"
-          if [ -f "$f" ]; then
-            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+          for step in writer product-lead; do
+            f="$RUNNER_TEMP/$step-usage.json"
+            [ -f "$f" ] || continue
+            echo "## Usage: $step" >> "$GITHUB_STEP_SUMMARY"
             jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
-          fi
+          done

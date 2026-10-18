@@ -42,12 +42,12 @@ then the numbered questions with their defaults, then this line:
   `chore/docs/<number>-spec-<slug>`, commit only that file, push, and open a PR titled
   "Spec: <issue title> (#<number>)" whose body says "Spec for #<number>. Merge to approve.".
   Do not post questions or add labels. The product lead handles the open questions next.
-- **update**: you are on the spec branch, and the owner has replied. Read the spec file and the latest
-  questions comment, then the owner's replies after it. Apply each answer to the spec: move it into the
-  acceptance criteria or assumptions, and remove it from Open questions. Questions the owner did not
-  mention keep their default; record those as assumptions too. Commit only the spec file with the message
-  "Spec: apply answers (#<number>)" and push to the same branch. Then:
-  - If the answers raise new questions (at most 3), post a new questions comment and keep `needs-you`.
-  - Otherwise remove the label `needs-you` and comment: "Spec updated. Ready for review: merge the PR to approve."
-  If the owner chose a stack, do not edit the constitution. Note it under Assumptions and say in your comment
-  that the owner should add it to the Stack section of `docs/constitution.md`.
+- **update**: you are on the spec branch, and the owner has replied. Read the spec file, then the owner's
+  comments on the issue since the last comment by the pipeline. These are answers to open questions, or
+  overrides of earlier decisions. Apply each one to the spec: move it into the acceptance criteria or
+  assumptions, mark it "(owner)", and remove it from Open questions or Decisions. If an answer raises a new
+  question, add it to Open questions (at most 3) with a proposed default. Commit only the spec file with the
+  message "Spec: apply answers (#<number>)" and push to the same branch. Do not post comments or change
+  labels. The product lead handles the open questions next.
+  If the owner chose a stack, do not edit the constitution. Note it under Assumptions; the product lead will
+  tell the owner to add it to the Stack section of `docs/constitution.md`.

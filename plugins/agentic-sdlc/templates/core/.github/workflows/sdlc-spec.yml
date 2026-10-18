@@ -76,11 +76,11 @@ jobs:
           claude_args: >-
             --model opus
             --max-turns 30
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh pr create:*)"
 
       - name: Keep writer usage
-        if: always() && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
-        run: cp "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/writer-usage.json" 2>/dev/null || true
+        if: always() && steps.guard.outputs.paused != 'true'
+        run: mv "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/writer-usage.json" 2>/dev/null || true
 
       - name: Product lead
         if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
@@ -98,11 +98,16 @@ jobs:
             --max-turns 25
             --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
 
+      - name: Keep product-lead usage
+        if: always() && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        run: mv "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/product-lead-usage.json" 2>/dev/null || true
+
       - name: Usage report
         if: always() && steps.guard.outputs.paused != 'true'
         run: |
-          f="$RUNNER_TEMP/claude-execution-output.json"
-          if [ -f "$f" ]; then
-            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+          for step in writer product-lead; do
+            f="$RUNNER_TEMP/$step-usage.json"
+            [ -f "$f" ] || continue
+            echo "## Usage: $step" >> "$GITHUB_STEP_SUMMARY"
             jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
-          fi
+          done
