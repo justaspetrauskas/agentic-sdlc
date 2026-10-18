@@ -2,9 +2,6 @@ name: sdlc-spec
 on:
   issues:
     types: [labeled]
-concurrency:
-  group: sdlc-active
-  cancel-in-progress: false
 permissions:
   contents: write
   pull-requests: write
@@ -13,6 +10,13 @@ permissions:
 jobs:
   spec:
     if: github.event.label.name == 'state:approved' && github.event.sender.login == github.repository_owner
+    # Job-level, so events whose job is skipped never take the queue slot. GitHub keeps one pending run
+    # per group; a newer one replaces it. Per issue that is harmless: a repeat label is a duplicate, and
+    # update mode reads every owner comment since the last pipeline comment.
+    # ponytail: different issues can run in parallel; the picker will enforce one active item per repo.
+    concurrency:
+      group: sdlc-issue-${{ github.event.issue.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
