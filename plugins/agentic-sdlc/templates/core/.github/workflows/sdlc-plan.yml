@@ -1,0 +1,136 @@
+name: sdlc-plan
+on:
+  pull_request:
+    types: [closed]
+  issues:
+    types: [labeled]
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+jobs:
+  plan:
+    # A merged spec PR starts planning. Re-adding state:spec-approved by hand starts it again.
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+       github.event.pull_request.merged_by.login == github.repository_owner &&
+       startsWith(github.event.pull_request.head.ref, 'chore/docs/') &&
+       contains(github.event.pull_request.head.ref, '-spec-')) ||
+      (github.event_name == 'issues' && github.event.label.name == 'state:spec-approved' &&
+       github.event.sender.login == github.repository_owner)
+    concurrency:
+      group: sdlc-issue-${{ github.event.issue.number || github.event.pull_request.head.ref }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+
+      - if: steps.guard.outputs.paused == 'true'
+        run: echo "Pipeline is paused. Nothing to do."
+
+      - id: issue
+        env:
+          NUM: ${{ github.event.issue.number }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          [ -n "$NUM" ] || NUM=$(echo "$HEAD" | sed -nE 's#^chore/docs/([0-9]+)-spec-.*#\1#p')
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+
+      - name: Plan (dry run)
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/plan.md.
+            Issue number: ${{ steps.issue.outputs.number }}
+            Mode: dry-run.
+          claude_args: >-
+            --model opus
+            --max-turns 30
+            --allowedTools "Read,Write,Glob,Grep,Bash(gh issue view:*)"
+
+      - name: Show preview
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run == 'true'
+        run: |
+          { echo "## Plan preview (dry run)"; cat .sdlc/tmp/plan-preview.md 2>/dev/null || echo "No plan was written."; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mark as planning
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh issue edit "${{ steps.issue.outputs.number }}" --add-label state:planning
+
+      - name: Plan (live)
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/plan.md.
+            Issue number: ${{ steps.issue.outputs.number }}
+            Mode: live.
+          claude_args: >-
+            --model opus
+            --max-turns 30
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)"
+
+      # ponytail: every plan waits for the owner (strict start); relax per gate once the trust ladder exists.
+      - name: Wait for the owner
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh issue edit "${{ steps.issue.outputs.number }}" --add-label needs-you
+
+      - name: Usage report
+        if: always() && steps.guard.outputs.paused != 'true'
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$f" ]; then
+            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+
+  tasks:
+    # A merged plan PR approves the plan and turns its tasks into sub-issues. No agent runs here.
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+      github.event.pull_request.merged_by.login == github.repository_owner &&
+      startsWith(github.event.pull_request.head.ref, 'chore/docs/') &&
+      contains(github.event.pull_request.head.ref, '-plan-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+
+      - name: Create task issues
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          issue=$(echo "$HEAD" | sed -nE 's#^chore/docs/([0-9]+)-plan-.*#\1#p')
+          plan=$(ls docs/plans/"$issue"-*.md | head -n1)
+          python3 .sdlc/scripts/tasks.py "$issue" "$plan"
+          gh issue edit "$issue" --add-label state:planned
+          for l in state:spec-approved state:planning needs-you; do gh issue edit "$issue" --remove-label "$l" || true; done
+          gh issue comment "$issue" --body "Plan approved (PR merged). Task issues created from \`$plan\`."
