@@ -1,8 +1,9 @@
 name: sdlc-merge
 on:
-  workflow_run:
-    workflows: [sdlc-review]
-    types: [completed]
+  # The reviewer's "Review: ..." comment is the last step on a task PR, and its event carries the PR number.
+  # (A workflow_run of sdlc-review would not: the review runs on the base branch.)
+  issue_comment:
+    types: [created]
 permissions:
   contents: read
   pull-requests: write
@@ -11,10 +12,10 @@ jobs:
   merge:
     # A plain script, not an agent. Merges a task PR only when every auto-merge rule holds; otherwise says why once.
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      (startsWith(github.event.workflow_run.head_branch, 'fix/') || startsWith(github.event.workflow_run.head_branch, 'update/'))
+      github.event.issue.pull_request && github.event.comment.user.login == 'claude[bot]' &&
+      startsWith(github.event.comment.body, 'Review:')
     concurrency:
-      group: sdlc-merge-${{ github.event.workflow_run.head_branch }}
+      group: sdlc-merge-${{ github.event.issue.number }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -32,16 +33,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          PR: ${{ github.event.issue.number }}
         run: |
-          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
-          [ -n "$pr" ] || { echo "No open PR for $BRANCH."; exit 0; }
+          read -r state branch sha < <(gh pr view "$PR" --json state,headRefName,headRefOid --jq '"\(.state) \(.headRefName) \(.headRefOid)"')
+          [ "$state" = OPEN ] || { echo "PR #$PR is $state."; exit 0; }
+          case "$branch" in fix/*|update/*) ;; *) echo "Not a task PR."; exit 0;; esac
+          pr=$PR
           enabled=$(yq '.auto_merge.enabled // false' .sdlc/config.yml)
           protected=$(yq -o=json -I=0 '.gates.protected_paths' .sdlc/config.yml)
-          python3 .sdlc/scripts/merge.py "$pr" "$SHA" "$enabled" "$protected" > "$RUNNER_TEMP/decision.txt"
+          python3 .sdlc/scripts/merge.py "$pr" "$sha" "$enabled" "$protected" > "$RUNNER_TEMP/decision.txt"
           cat "$RUNNER_TEMP/decision.txt"
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "merge=$([ "$(cat "$RUNNER_TEMP/decision.txt")" = merge ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Say why it waits
@@ -69,7 +72,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ steps.decide.outputs.pr }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ steps.decide.outputs.sha }}
         run: |
           gh pr edit "$PR" --add-label auto-merged
           gh pr merge "$PR" --squash --delete-branch --match-head-commit "$SHA"
