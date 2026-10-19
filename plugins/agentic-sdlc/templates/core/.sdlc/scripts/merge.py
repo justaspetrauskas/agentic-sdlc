@@ -65,8 +65,9 @@ def facts(pr, sha, enabled, protected):
     plan = subprocess.run(["git", "show", f"HEAD:{plan_path.group(1)}"], capture_output=True, text=True).stdout if plan_path else ""
     # Check runs of the head commit via REST: needs only checks:read (gh pr checks also wants actions:read).
     runs = json.loads(gh("api", f"repos/{{owner}}/{{repo}}/commits/{p['headRefOid']}/check-runs?per_page=100",
-                         "--jq", "[.check_runs[] | {name, conclusion}]"))
-    checks = {c["name"]: (c["conclusion"] or "PENDING").upper() for c in runs}
+                         "--jq", "[.check_runs[] | {id, name, conclusion}]"))
+    # A reopened PR has several runs per check name; the newest (highest id) counts.
+    checks = {c["name"]: (c["conclusion"] or "PENDING").upper() for c in sorted(runs, key=lambda c: c["id"])}
     last_commit = p["commits"][-1]["committedDate"] if p["commits"] else ""
     reviews = [c for c in p["comments"] if c["body"].startswith("Review:") and c["createdAt"] >= last_commit]
     labels = {l["name"] for l in p["labels"]} | {l["name"] for l in t_labels["labels"]}

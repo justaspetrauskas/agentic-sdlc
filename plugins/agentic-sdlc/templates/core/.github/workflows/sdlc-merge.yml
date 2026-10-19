@@ -4,6 +4,12 @@ on:
   # (A workflow_run of sdlc-review would not: the review runs on the base branch.)
   issue_comment:
     types: [created]
+  # Re-check one PR by hand: gh workflow run sdlc-merge.yml -f pr=<number>
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number"
+        required: true
 permissions:
   contents: read
   pull-requests: write
@@ -14,10 +20,11 @@ jobs:
   merge:
     # A plain script, not an agent. Merges a task PR only when every auto-merge rule holds; otherwise says why once.
     if: >-
-      github.event.issue.pull_request && github.event.comment.user.login == 'claude[bot]' &&
-      startsWith(github.event.comment.body, 'Review:')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && github.event.comment.user.login == 'claude[bot]' &&
+       startsWith(github.event.comment.body, 'Review:'))
     concurrency:
-      group: sdlc-merge-${{ github.event.issue.number }}
+      group: sdlc-merge-${{ github.event.issue.number || inputs.pr }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -35,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.issue.number }}
+          PR: ${{ github.event.issue.number || inputs.pr }}
         run: |
           read -r state branch sha < <(gh pr view "$PR" --json state,headRefName,headRefOid --jq '"\(.state) \(.headRefName) \(.headRefOid)"')
           [ "$state" = OPEN ] || { echo "PR #$PR is $state."; exit 0; }
@@ -76,5 +83,5 @@ jobs:
           PR: ${{ steps.decide.outputs.pr }}
           SHA: ${{ steps.decide.outputs.sha }}
         run: |
-          gh pr edit "$PR" --add-label auto-merged
+          gh api "repos/$GH_REPO/issues/$PR/labels" -f "labels[]=auto-merged" > /dev/null
           gh pr merge "$PR" --squash --delete-branch --match-head-commit "$SHA"

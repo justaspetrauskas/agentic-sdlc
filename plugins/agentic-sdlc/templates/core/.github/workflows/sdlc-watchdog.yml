@@ -28,10 +28,14 @@ jobs:
           if [ "$ACTOR" = "$OWNER" ] && [ "$SIMULATE" != "true" ]; then
             echo "Push by the owner. Allowed."; exit 0
           fi
-          merged=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)] | length')
-          if [ "$merged" -gt 0 ]; then
-            echo "Commit came from a merged PR. Allowed."; exit 0
-          fi
+          # GitHub can take a few seconds to link a fresh merge commit to its PR, so look more than once.
+          for wait in 0 10 20 40; do
+            sleep "$wait"
+            merged=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)] | length')
+            if [ "$merged" -gt 0 ]; then
+              echo "Commit came from a merged PR. Allowed."; exit 0
+            fi
+          done
           issue=$(yq '.control_issue' .sdlc/config.yml)
           gh issue edit "$issue" --add-label PAUSE
           gh issue create \
