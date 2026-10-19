@@ -1,0 +1,75 @@
+name: sdlc-merge
+on:
+  workflow_run:
+    workflows: [sdlc-review]
+    types: [completed]
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+jobs:
+  merge:
+    # A plain script, not an agent. Merges a task PR only when every auto-merge rule holds; otherwise says why once.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      (startsWith(github.event.workflow_run.head_branch, 'fix/') || startsWith(github.event.workflow_run.head_branch, 'update/'))
+    concurrency:
+      group: sdlc-merge-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Base branch, so the PR cannot change the rules that judge it.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+
+      - id: decide
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
+          [ -n "$pr" ] || { echo "No open PR for $BRANCH."; exit 0; }
+          enabled=$(yq '.auto_merge.enabled // false' .sdlc/config.yml)
+          protected=$(yq -o=json -I=0 '.gates.protected_paths' .sdlc/config.yml)
+          python3 .sdlc/scripts/merge.py "$pr" "$SHA" "$enabled" "$protected" > "$RUNNER_TEMP/decision.txt"
+          cat "$RUNNER_TEMP/decision.txt"
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "merge=$([ "$(cat "$RUNNER_TEMP/decision.txt")" = merge ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Say why it waits
+        if: steps.decide.outputs.merge == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ steps.decide.outputs.pr }}
+        run: |
+          body=$(printf '<!-- sdlc:merge -->\nWaits for you to merge:\n%s' "$(sed 's/^/- /' "$RUNNER_TEMP/decision.txt")")
+          last=$(gh pr view "$PR" --json comments --jq '[.comments[] | select(.body | startswith("<!-- sdlc:merge -->"))][-1].body // ""')
+          [ "$last" = "$body" ] || gh pr comment "$PR" --body "$body"
+
+      # The app token makes the merge push trigger CI, deploy, picker and watchdog. GITHUB_TOKEN would not.
+      - id: app
+        if: steps.decide.outputs.merge == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.SDLC_APP_ID }}
+          private-key: ${{ secrets.SDLC_APP_PRIVATE_KEY }}
+
+      - name: Merge
+        if: steps.decide.outputs.merge == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ steps.decide.outputs.pr }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh pr edit "$PR" --add-label auto-merged
+          gh pr merge "$PR" --squash --delete-branch --match-head-commit "$SHA"
