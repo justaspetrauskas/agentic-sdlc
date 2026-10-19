@@ -63,7 +63,11 @@ def facts(pr, sha, enabled, protected):
         parent_labels = {l["name"] for l in t_labels["labels"]}
     plan_path = re.search(r"from `([^`]+)`", task_body.splitlines()[0]) if task_body else None
     plan = subprocess.run(["git", "show", f"HEAD:{plan_path.group(1)}"], capture_output=True, text=True).stdout if plan_path else ""
-    checks = {c["name"]: c["state"] for c in json.loads(gh("pr", "checks", pr, "--json", "name,state") or "[]")}
+    # gh pr checks exits non-zero while any check is pending or failed, so read its output without check=True.
+    out = subprocess.run(["gh", "pr", "checks", pr, "--json", "name,state"], capture_output=True, text=True)
+    if not out.stdout.strip().startswith("["):
+        sys.exit(f"could not read checks: {out.stderr.strip()}")
+    checks = {c["name"]: c["state"] for c in json.loads(out.stdout)}
     last_commit = p["commits"][-1]["committedDate"] if p["commits"] else ""
     reviews = [c for c in p["comments"] if c["body"].startswith("Review:") and c["createdAt"] >= last_commit]
     labels = {l["name"] for l in p["labels"]} | {l["name"] for l in t_labels["labels"]}
