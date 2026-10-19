@@ -23,20 +23,23 @@ def rank(parent):
 
 
 def choose(parents, tasks):
-    """Return (done_parents, next_task_or_None). Parents are state:planned issues, tasks are type:task issues."""
+    """Return (done_parents, next_task_or_None). Parents are state:planned issues, tasks are type:task issues.
+    One active item per repo: if the first item with open tasks waits for the owner, nothing else starts."""
     by_parent = {}
     for t in tasks:
         m = TASK_TITLE.match(t["title"])
         if m:
             by_parent.setdefault(int(m.group(3)), []).append((int(m.group(1)), t))
-    done, pick = [], None
+    done, pick, started = [], None, False
     for p in sorted(parents, key=lambda p: (rank(p), p["createdAt"])):
         mine = sorted(by_parent.get(p["number"], []), key=lambda x: x[0])
         open_tasks = [t for _, t in mine if t["state"] == "OPEN"]
         if mine and not open_tasks:
             done.append(p)
-        elif pick is None and open_tasks and not (labels(open_tasks[0]) & STOP):
-            pick = open_tasks[0]
+        elif open_tasks and not started:
+            started = True
+            if not (labels(open_tasks[0]) & STOP):
+                pick = open_tasks[0]
     return done, pick
 
 
@@ -87,7 +90,7 @@ def test():
     assert done == [] and pick["number"] == 25, pick  # oldest parent first, next open task
 
     tasks = [t(24, 1, 2, 7, "CLOSED"), t(25, 2, 2, 7, "OPEN", "needs-you"), t(18, 1, 1, 13)]
-    assert choose(parents, tasks)[1]["number"] == 18  # a parent waiting for you is skipped
+    assert choose(parents, tasks)[1] is None  # the first item waits for you, so nothing else starts
 
     tasks = [t(24, 1, 1, 7, "CLOSED"), t(18, 1, 1, 13)]
     done, pick = choose(parents, tasks)

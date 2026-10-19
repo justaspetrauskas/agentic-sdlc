@@ -83,7 +83,7 @@ jobs:
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
           npm run build
           npx --yes wrangler@4 pages project create "$PROJECT" --production-branch main 2>/dev/null || echo "Project exists."
-          npx --yes wrangler@4 pages deploy "$DIR" --project-name "$PROJECT" --branch main | tee -a "$GITHUB_STEP_SUMMARY"
+          npx --yes wrangler@4 pages deploy "$DIR" --project-name "$PROJECT" --branch main --commit-dirty=true | tee -a "$GITHUB_STEP_SUMMARY"
 
   scope:
     # Tripwire: a task PR that grew past its task stops and goes to the owner.
