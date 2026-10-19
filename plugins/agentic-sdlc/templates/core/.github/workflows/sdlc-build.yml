@@ -1,0 +1,121 @@
+name: sdlc-build
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Task issue number"
+        required: true
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+jobs:
+  build:
+    # You start a task by adding state:building to it. The picker will use workflow_dispatch later.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'state:building' && github.event.sender.login == github.repository_owner &&
+       contains(github.event.issue.labels.*.name, 'type:task'))
+    concurrency:
+      group: sdlc-issue-${{ github.event.issue.number || inputs.task }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+
+      - if: steps.guard.outputs.paused == 'true'
+        run: echo "Pipeline is paused. Nothing to do."
+
+      - id: task
+        if: steps.guard.outputs.paused != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TASK: ${{ github.event.issue.number || inputs.task }}
+        run: |
+          title=$(gh issue view "$TASK" --json title --jq .title)
+          body=$(gh issue view "$TASK" --json body --jq .body)
+          parent=$(echo "$body" | sed -nE 's/.*Parent: #([0-9]+).*/\1/p' | head -n1)
+          kind=update
+          if gh issue view "$parent" --json labels --jq '.labels[].name' | grep -qx type:fix; then kind=fix; fi
+          slug=$(echo "$title" | sed -E 's/^Task [0-9]+ of [0-9]+: //; s/ \(#[0-9]+\)$//' \
+            | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-|-$//g' | cut -c1-40 | sed -E 's/-$//')
+          echo "number=$TASK" >> "$GITHUB_OUTPUT"
+          echo "parent=$parent" >> "$GITHUB_OUTPUT"
+          echo "branch=$kind/technical/$TASK-$slug" >> "$GITHUB_OUTPUT"
+          gh issue edit "$TASK" --add-label state:building
+
+      - name: Build (dry run)
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/build.md.
+            Task issue: ${{ steps.task.outputs.number }}
+            Mode: dry-run.
+          claude_args: >-
+            --model sonnet
+            --max-turns 60
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(mkdir:*),Bash(git status:*),Bash(git diff:*),Bash(gh issue view:*)"
+
+      - name: Show dry-run diff
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run == 'true'
+        run: |
+          git add -A -N .
+          { echo "## Build (dry run)"; echo '```'; git diff --stat; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build (live)
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/build.md.
+            Task issue: ${{ steps.task.outputs.number }}
+            Parent issue: ${{ steps.task.outputs.parent }}
+            Branch: ${{ steps.task.outputs.branch }}
+            Mode: live.
+          claude_args: >-
+            --model sonnet
+            --max-turns 60
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(mkdir:*),Bash(git status:*),Bash(git diff:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh pr create:*)"
+
+      - name: Hand over
+        if: always() && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true' && steps.task.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TASK: ${{ steps.task.outputs.number }}
+          BRANCH: ${{ steps.task.outputs.branch }}
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url')
+          gh issue edit "$TASK" --remove-label state:building || true
+          if [ -n "$pr" ]; then
+            gh issue edit "$TASK" --add-label state:in-review
+          else
+            gh issue edit "$TASK" --add-label needs-you
+            gh issue comment "$TASK" --body "The build run ended without a PR. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+
+      - name: Usage report
+        if: always() && steps.guard.outputs.paused != 'true'
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$f" ]; then
+            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          fi

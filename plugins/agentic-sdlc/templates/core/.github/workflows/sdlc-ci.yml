@@ -1,0 +1,90 @@
+name: sdlc-ci
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  checks:
+    # The deterministic gate: typecheck, lint and tests decide whether a change can merge.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip before the scaffold
+        id: pkg
+        run: |
+          if [ -f package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "No package.json yet, nothing to check." >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - if: steps.pkg.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - if: steps.pkg.outputs.present == 'true'
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Required scripts exist
+        if: steps.pkg.outputs.present == 'true'
+        run: |
+          for s in typecheck lint test; do
+            jq -e --arg s "$s" '.scripts[$s]' package.json >/dev/null || { echo "::error::package.json has no \"$s\" script"; exit 1; }
+          done
+
+      - if: steps.pkg.outputs.present == 'true'
+        run: npm run typecheck
+      - if: steps.pkg.outputs.present == 'true'
+        run: npm run lint
+      - if: steps.pkg.outputs.present == 'true'
+        run: npm test
+
+  scope:
+    # Tripwire: a task PR that grew past its task stops and goes to the owner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: task
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          task=$(printf '%s' "$PR_BODY" | sed -nE 's/^Closes #([0-9]+).*/\1/p' | head -n1)
+          if [ -z "$task" ] || ! gh issue view "$task" --json labels --jq '.labels[].name' | grep -qx type:task; then
+            echo "Not a task PR. Nothing to check."; exit 0
+          fi
+          gh issue view "$task" --json body --jq .body > "$RUNNER_TEMP/task.md"
+          plan=$(sed -nE '1s/.*`([^`]+)`.*/\1/p' "$RUNNER_TEMP/task.md")
+          echo "number=$task" >> "$GITHUB_OUTPUT"
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
+
+      - name: Tripwire
+        if: steps.task.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TASK: ${{ steps.task.outputs.number }}
+          PLAN: ${{ steps.task.outputs.plan }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: origin/${{ github.event.pull_request.base.ref }}
+        run: |
+          # Script, config and plan come from the base branch, so a PR cannot edit its own tripwire.
+          git show "$BASE:.sdlc/scripts/tripwire.py" > "$RUNNER_TEMP/tripwire.py"
+          git show "$BASE:$PLAN" > "$RUNNER_TEMP/plan.md"
+          protected=$(git show "$BASE:.sdlc/config.yml" | yq -o=json -I=0 '.gates.protected_paths')
+          if ! python3 "$RUNNER_TEMP/tripwire.py" "$BASE" "$RUNNER_TEMP/task.md" "$RUNNER_TEMP/plan.md" "$protected" > "$RUNNER_TEMP/trip.txt"; then
+            body=$(printf 'Tripwire: this PR grew past task #%s, so it waits for you.\n\n%s\n\nMerge it yourself if that is fine, or close it and update the plan.' "$TASK" "$(sed 's/^/- /' "$RUNNER_TEMP/trip.txt")")
+            gh pr comment "$PR" --body "$body"
+            gh issue edit "$TASK" --add-label needs-you
+            cat "$RUNNER_TEMP/trip.txt"; exit 1
+          fi
