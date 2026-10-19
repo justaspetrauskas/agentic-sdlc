@@ -21,7 +21,7 @@ jobs:
       - if: steps.pkg.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: lts/*
 
       - if: steps.pkg.outputs.present == 'true'
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
