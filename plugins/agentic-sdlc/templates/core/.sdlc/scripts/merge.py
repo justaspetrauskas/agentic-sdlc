@@ -57,8 +57,11 @@ def facts(pr, sha, enabled, protected):
     task_body = gh("issue", "view", task.group(1), "--json", "body", "--jq", ".body") if task else ""
     t_labels = json.loads(gh("issue", "view", task.group(1), "--json", "labels")) if task else {"labels": []}
     parent = re.search(r"Parent: #(\d+)", task_body)
-    parent_labels = {l["name"] for l in json.loads(gh("issue", "view", parent.group(1), "--json", "labels"))["labels"]} if parent else set()
-    plan_path = re.search(r"`([^`]+)`", task_body.splitlines()[0]) if task_body else None
+    if parent:
+        parent_labels = {l["name"] for l in json.loads(gh("issue", "view", parent.group(1), "--json", "labels"))["labels"]}
+    else:  # a fix or UX issue with no plan is its own task
+        parent_labels = {l["name"] for l in t_labels["labels"]}
+    plan_path = re.search(r"from `([^`]+)`", task_body.splitlines()[0]) if task_body else None
     plan = subprocess.run(["git", "show", f"HEAD:{plan_path.group(1)}"], capture_output=True, text=True).stdout if plan_path else ""
     checks = {c["name"]: c["state"] for c in json.loads(gh("pr", "checks", pr, "--json", "name,state") or "[]")}
     last_commit = p["commits"][-1]["committedDate"] if p["commits"] else ""

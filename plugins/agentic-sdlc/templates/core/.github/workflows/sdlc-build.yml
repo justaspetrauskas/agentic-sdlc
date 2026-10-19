@@ -47,6 +47,8 @@ jobs:
           title=$(gh issue view "$TASK" --json title --jq .title)
           body=$(gh issue view "$TASK" --json body --jq .body)
           parent=$(echo "$body" | sed -nE 's/.*Parent: #([0-9]+).*/\1/p' | head -n1)
+          # A fix or UX issue with no plan is its own task.
+          [ -n "$parent" ] || parent=$TASK
           kind=update
           if gh issue view "$parent" --json labels --jq '.labels[].name' | grep -qx type:fix; then kind=fix; fi
           slug=$(echo "$title" | sed -E 's/^Task [0-9]+ of [0-9]+: //; s/ \(#[0-9]+\)$//' \

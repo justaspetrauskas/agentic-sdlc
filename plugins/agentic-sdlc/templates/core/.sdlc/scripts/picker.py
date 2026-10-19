@@ -22,10 +22,12 @@ def rank(parent):
     return next((i for i, l in enumerate(RANK) if l in names), len(RANK))
 
 
-def choose(parents, tasks):
+def choose(parents, tasks, direct=()):
     """Return (done_parents, next_task_or_None). Parents are state:planned issues, tasks are type:task issues.
+    Direct items are fix/UX issues with no state label: the issue is its own task, no spec or plan.
     One active item per repo: if the first item with open tasks waits for the owner, nothing else starts."""
-    by_parent = {}
+    by_parent = {d["number"]: [(1, {**d, "state": "OPEN"})] for d in direct}
+    parents = list(parents) + list(direct)
     for t in tasks:
         m = TASK_TITLE.match(t["title"])
         if m:
@@ -55,7 +57,11 @@ def main(dry):
                             "--json", "number,title,labels,createdAt"))
     tasks = json.loads(gh("issue", "list", "--label", "type:task", "--state", "all", "--limit", "500",
                           "--json", "number,title,state,labels"))
-    done, pick = choose(parents, tasks)
+    direct = [i for kind in ("type:fix", "type:ux")
+              for i in json.loads(gh("issue", "list", "--label", kind, "--state", "open", "--limit", "100",
+                                     "--json", "number,title,labels,createdAt"))
+              if not any(n.startswith("state:") for n in labels(i))]
+    done, pick = choose(parents, tasks, direct)
 
     for p in done:
         print(f"done  #{p['number']} {p['title']}")
@@ -98,6 +104,10 @@ def test():
 
     fix = {"number": 40, "title": "Fix", "labels": lab("type:fix", "state:planned"), "createdAt": "2026-10-19"}
     assert choose(parents + [fix], tasks + [t(41, 1, 1, 40)])[1]["number"] == 41  # fix beats older ideas
+    bug = {"number": 39, "title": "Fix: x", "labels": lab("type:fix"), "createdAt": "2026-10-19"}
+    assert choose(parents, [t(25, 2, 2, 7)], [bug])[1]["number"] == 39  # a direct fix is its own task, ahead of ideas
+    blocked = {**bug, "labels": lab("type:fix", "needs-you")}
+    assert choose(parents, [t(25, 2, 2, 7)], [blocked])[1] is None  # and blocks like any item when it waits for you
     print("ok")
 
 

@@ -5,6 +5,8 @@ and the PR text plain.
 
 ## Read first
 - The task issue: `gh issue view <task>`. Its body names the plan file and the parent issue.
+  A fix or UX issue with no plan is its own task: the issue gives the broken criterion, the evidence and the
+  expected result. Write a test that reproduces it first, then fix it with the smallest change.
 - The plan file, the spec it links to (`docs/specs/<parent>-*.md`) and `docs/constitution.md`.
 - The code that is already there. Follow its structure and style.
 
@@ -27,7 +29,8 @@ and the PR text plain.
 ## Modes
 - **dry-run**: build and run the checks, but do not commit, push or open a PR.
 - **live**: create the branch you were given, commit with "Task <n>: <title> (#<task>)", push, and open a PR
-  titled "Task <n> of <m>: <title> (#<parent>)". The body starts with "Closes #<task>." then lists the ACs
+  titled "Task <n> of <m>: <title> (#<parent>)", or the issue title for a task with no plan. The body starts
+  with "Closes #<task>." then lists the ACs
   covered, the tests added, the check results, and a "Needs you" section if anything does.
 - **revise**: you are on the branch of an open task PR, and the owner asked for a change (the request file).
   Read the PR (`gh pr view <pr>`) and its task first. Make only the requested change, plus tests that prove it,
