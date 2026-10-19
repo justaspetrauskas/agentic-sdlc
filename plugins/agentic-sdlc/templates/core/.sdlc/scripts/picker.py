@@ -59,7 +59,7 @@ def main(dry):
         if not dry:
             gh("issue", "edit", str(p["number"]), "--add-label", "state:done", "--remove-label", "state:planned")
             gh("issue", "comment", str(p["number"]), "--body",
-               "All tasks are merged. Railway deploys from main after CI passes.")
+               "All tasks are merged. The app deploys from main after CI passes.")
 
     if busy or building:
         print("busy: " + ", ".join([f"PR #{p['number']}" for p in busy] + [f"#{i['number']}" for i in building]))

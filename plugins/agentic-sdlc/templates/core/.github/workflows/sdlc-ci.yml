@@ -2,7 +2,7 @@ name: sdlc-ci
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  # Railway's "Wait for CI" needs a workflow that runs on push to the deploy branch.
+  # Railway's "Wait for CI" needs a workflow that runs on push to the deploy branch; cloudflare-pages deploys from here.
   push:
     branches: [main]
 permissions:
@@ -42,6 +42,48 @@ jobs:
         run: npm run lint
       - if: steps.pkg.outputs.present == 'true'
         run: npm test
+
+  deploy:
+    # Only after checks pass on main, so a red build never deploys. Railway pulls by itself, so nothing to do for it.
+    needs: checks
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: cfg
+        env:
+          HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: |
+          provider=$(yq '.deploy.provider // "railway"' .sdlc/config.yml)
+          if [ "$provider" != "cloudflare-pages" ]; then echo "Provider is $provider. Nothing to deploy from CI."; exit 0; fi
+          if [ "$HAS_TOKEN" != "true" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID secret is missing, so nothing was deployed."; exit 0
+          fi
+          if [ ! -f package.json ]; then echo "No package.json yet. Nothing to deploy."; exit 0; fi
+          echo "project=$(yq '.deploy.project // ""' .sdlc/config.yml)" >> "$GITHUB_OUTPUT"
+          echo "dir=$(yq '.deploy.dir // "dist"' .sdlc/config.yml)" >> "$GITHUB_OUTPUT"
+
+      - if: steps.cfg.outputs.project != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Build and deploy to Cloudflare Pages
+        if: steps.cfg.outputs.project != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ steps.cfg.outputs.project }}
+          DIR: ${{ steps.cfg.outputs.dir }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build
+          npx --yes wrangler@4 pages project create "$PROJECT" --production-branch main 2>/dev/null || echo "Project exists."
+          npx --yes wrangler@4 pages deploy "$DIR" --project-name "$PROJECT" --branch main | tee -a "$GITHUB_STEP_SUMMARY"
 
   scope:
     # Tripwire: a task PR that grew past its task stops and goes to the owner.

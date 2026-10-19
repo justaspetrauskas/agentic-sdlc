@@ -27,5 +27,5 @@ jobs:
           fi
           open=$(gh issue list --label critical --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
           if [ -n "$open" ]; then echo "Already reported in #$open."; exit 1; fi
-          gh issue create --title "$title" --label critical --label needs-you --body "$(printf '%s did not answer twice, a minute apart.\n\nRailway keeps the previous version if a new deploy fails its healthcheck, so check the latest deploy and its variables first.\n\nRun: %s' "$url" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")"
+          gh issue create --title "$title" --label critical --label needs-you --body "$(printf '%s did not answer twice, a minute apart.\n\nCheck the latest deploy and its environment variables first. On Railway the previous version keeps serving if a new deploy fails its healthcheck; on Cloudflare Pages you can roll back to an earlier deployment in the dashboard.\n\nRun: %s' "$url" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")"
           exit 1

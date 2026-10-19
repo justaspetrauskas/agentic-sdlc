@@ -21,7 +21,10 @@ auto_merge:
 notify:
   url: ""            # optional notification service
 deploy:
-  health_url: ""     # e.g. https://<app>.up.railway.app/ ; empty turns the health monitor off
+  provider: railway  # railway: Railway deploys itself after CI (Wait for CI) | cloudflare-pages: sdlc-ci deploys after checks | none
+  project: ""        # cloudflare-pages project name
+  dir: dist          # build output that cloudflare-pages uploads
+  health_url: ""     # live URL; empty turns the health monitor off
 branches:
   pattern: "<kind>/<area>/<issue>-<slug>"
   kinds: [fix, update, chore]
