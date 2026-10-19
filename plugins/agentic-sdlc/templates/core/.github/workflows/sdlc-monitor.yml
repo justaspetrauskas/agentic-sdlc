@@ -1,0 +1,31 @@
+name: sdlc-monitor
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  health:
+    # A plain script, no agent. Runs even while paused: watching the live app is not new work.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          url=$(yq '.deploy.health_url // ""' .sdlc/config.yml)
+          if [ -z "$url" ]; then echo "No deploy.health_url in .sdlc/config.yml. Nothing to check."; exit 0; fi
+          title="Critical: health check failing"
+          # Two tries a minute apart, so one slow response does not page you.
+          if curl -fsS -o /dev/null --max-time 20 "$url" || { sleep 60; curl -fsS -o /dev/null --max-time 20 "$url"; }; then
+            echo "Healthy: $url"; exit 0
+          fi
+          open=$(gh issue list --label critical --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$open" ]; then echo "Already reported in #$open."; exit 1; fi
+          gh issue create --title "$title" --label critical --label needs-you --body "$(printf '%s did not answer twice, a minute apart.\n\nRailway keeps the previous version if a new deploy fails its healthcheck, so check the latest deploy and its variables first.\n\nRun: %s' "$url" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")"
+          exit 1

@@ -2,6 +2,9 @@ name: sdlc-ci
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  # Railway's "Wait for CI" needs a workflow that runs on push to the deploy branch.
+  push:
+    branches: [main]
 permissions:
   contents: read
 jobs:
@@ -42,6 +45,7 @@ jobs:
 
   scope:
     # Tripwire: a task PR that grew past its task stops and goes to the owner.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

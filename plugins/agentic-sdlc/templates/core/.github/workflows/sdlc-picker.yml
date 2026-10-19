@@ -1,0 +1,36 @@
+name: sdlc-picker
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: write
+concurrency:
+  group: sdlc-picker
+  cancel-in-progress: false
+jobs:
+  pick:
+    # A plain script, not an agent. After each merge it starts the next task of the highest-priority planned item.
+    # ponytail: no night window or daily cap yet (M2); spec and plan stay started by you, as your approval gates.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+
+      - if: steps.guard.outputs.paused == 'true'
+        run: echo "Pipeline is paused. Nothing to do."
+
+      - if: steps.guard.outputs.paused != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRY: ${{ steps.guard.outputs.dry_run == 'true' && '--dry-run' || '' }}
+        run: python3 .sdlc/scripts/picker.py $DRY | tee -a "$GITHUB_STEP_SUMMARY"
