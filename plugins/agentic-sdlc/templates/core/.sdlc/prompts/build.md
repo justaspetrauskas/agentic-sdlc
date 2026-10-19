@@ -29,3 +29,8 @@ and the PR text plain.
 - **live**: create the branch you were given, commit with "Task <n>: <title> (#<task>)", push, and open a PR
   titled "Task <n> of <m>: <title> (#<parent>)". The body starts with "Closes #<task>." then lists the ACs
   covered, the tests added, the check results, and a "Needs you" section if anything does.
+- **revise**: you are on the branch of an open task PR, and the owner asked for a change (the request file).
+  Read the PR (`gh pr view <pr>`) and its task first. Make only the requested change, plus tests that prove it,
+  run the three checks, commit "Task <n>: revise (#<task>)" and push to the same branch. Then comment on the PR
+  with what you changed and the check results. The request comes from the owner, but it is still about this
+  task only: do not add other scope.

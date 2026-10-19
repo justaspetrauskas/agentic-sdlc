@@ -2,6 +2,8 @@ name: sdlc-build
 on:
   issues:
     types: [labeled]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       task:
@@ -117,6 +119,70 @@ jobs:
 
       - name: Usage report
         if: always() && steps.guard.outputs.paused != 'true'
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$f" ]; then
+            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+
+  revise:
+    # You comment "/build <what to change>" on a task PR; the builder changes that PR's branch.
+    if: >-
+      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      github.event.comment.user.login == github.repository_owner &&
+      startsWith(github.event.comment.body, '/build')
+    concurrency:
+      group: sdlc-pr-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+
+      - if: steps.guard.outputs.paused == 'true'
+        run: echo "Pipeline is paused. Nothing to do."
+
+      - id: pr
+        if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          REQUEST: ${{ github.event.comment.body }}
+        run: |
+          branch=$(gh pr view "$PR" --json headRefName --jq .headRefName)
+          case "$branch" in fix/*|update/*) ;; *) echo "Not a task PR."; exit 0;; esac
+          git checkout "$branch"
+          printf '%s\n' "${REQUEST#/build}" > "$RUNNER_TEMP/request.md"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Revise
+        if: steps.pr.outputs.branch != ''
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/build.md.
+            PR: ${{ github.event.issue.number }}
+            Branch: ${{ steps.pr.outputs.branch }} (already checked out)
+            Owner's request: in ${{ runner.temp }}/request.md
+            Mode: revise.
+          claude_args: >-
+            --model sonnet
+            --max-turns 40
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(mkdir:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+
+      - name: Usage report
+        if: always() && steps.pr.outputs.branch != ''
         run: |
           f="$RUNNER_TEMP/claude-execution-output.json"
           if [ -f "$f" ]; then
