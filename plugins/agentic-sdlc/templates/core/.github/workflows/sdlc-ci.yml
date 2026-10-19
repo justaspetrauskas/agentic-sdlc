@@ -2,7 +2,7 @@ name: sdlc-ci
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  # Railway's "Wait for CI" needs a workflow that runs on push to the deploy branch; cloudflare-pages deploys from here.
+  # Deploys run from here, after checks pass on main.
   push:
     branches: [main]
 permissions:
@@ -44,7 +44,7 @@ jobs:
         run: npm test
 
   deploy:
-    # Only after checks pass on main, so a red build never deploys. Railway pulls by itself, so nothing to do for it.
+    # Only after checks pass on main, so a red build never deploys.
     needs: checks
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -58,8 +58,8 @@ jobs:
         env:
           HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: |
-          provider=$(yq '.deploy.provider // "railway"' .sdlc/config.yml)
-          if [ "$provider" != "cloudflare-pages" ]; then echo "Provider is $provider. Nothing to deploy from CI."; exit 0; fi
+          provider=$(yq '.deploy.provider // "none"' .sdlc/config.yml)
+          if [ "$provider" != "cloudflare-pages" ]; then echo "Provider is $provider. Nothing to deploy."; exit 0; fi
           if [ "$HAS_TOKEN" != "true" ]; then
             echo "::warning::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID secret is missing, so nothing was deployed."; exit 0
           fi
