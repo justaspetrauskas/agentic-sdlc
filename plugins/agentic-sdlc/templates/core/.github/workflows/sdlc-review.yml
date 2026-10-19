@@ -52,6 +52,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Task PRs are opened by the Claude app, so the CI run that triggers this review is started by it.
+          allowed_bots: "claude,claude[bot]"
           prompt: |
             Follow .sdlc/prompts/review.md.
             PR: ${{ steps.pr.outputs.number }}
