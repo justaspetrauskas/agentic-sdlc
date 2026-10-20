@@ -19,7 +19,7 @@ RATE_LIMIT = re.compile(r"rate.?limit|usage limit|limit reached|too many request
 
 def api(*args, body=None):
     """Return (ok, parsed json or raw text). A failed call is a value, so callers can retry or treat 404 as empty."""
-    p = subprocess.run(["gh", "api", *args], input=json.dumps(body) if body is not None else None,
+    p = subprocess.run(["gh", "api", *args, *(["--input", "-"] if body is not None else [])], input=json.dumps(body) if body is not None else None,
                        capture_output=True, text=True)
     if p.returncode:
         return False, p.stderr
@@ -62,30 +62,31 @@ def row(stage, issue, model, results):
 
 def append(new, tries=5):
     repo = os.environ["GH_REPO"]
+    err = ""
     for _ in range(tries):
         rows, sha = read_rows()
         text = "".join(json.dumps(r) + "\n" for r in rows + [new])
         if sha:
             # The Contents API rejects a stale sha, so a concurrent append makes this attempt fail and re-read.
-            ok, _ = api("-X", "PUT", f"repos/{repo}/contents/{FILE}", body={
+            ok, err = api("-X", "PUT", f"repos/{repo}/contents/{FILE}", body={
                 "message": "ledger: " + new["stage"], "branch": BRANCH, "sha": sha,
                 "content": base64.b64encode(text.encode()).decode()})
         else:
-            ok = create_branch(repo, text)
+            ok, err = create_branch(repo, text)
         if ok:
             return
-    raise RuntimeError("could not append to the ledger")
+    raise RuntimeError("could not append to the ledger: " + str(err))
 
 
 def create_branch(repo, text):
     ok, tree = api("-X", "POST", f"repos/{repo}/git/trees", body={
         "tree": [{"path": FILE, "mode": "100644", "type": "blob", "content": text}]})
     if not ok:
-        return False
+        return False, tree
     ok, commit = api("-X", "POST", f"repos/{repo}/git/commits", body={"message": "ledger: start", "tree": tree["sha"]})
     if not ok:
-        return False
-    return api("-X", "POST", f"repos/{repo}/git/refs", body={"ref": f"refs/heads/{BRANCH}", "sha": commit["sha"]})[0]
+        return False, commit
+    return api("-X", "POST", f"repos/{repo}/git/refs", body={"ref": f"refs/heads/{BRANCH}", "sha": commit["sha"]})
 
 
 def count(rows, today=None, issue=None, stage=None, now=None):
