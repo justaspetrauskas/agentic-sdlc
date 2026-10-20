@@ -6,6 +6,7 @@ agents second, so write plain, short sentences.
 ## Read first
 - The spec: `docs/specs/<number>-*.md`. It is approved. Do not change it.
 - `docs/constitution.md` (goal, principles, stack, quality bar, critical decisions)
+- `docs/design.md` (fonts, tokens, breakpoints, component and icon libraries), when the project has a front end
 - `.sdlc/config.yml` (protected paths)
 - Existing plans in `docs/plans/` and the code in the repo, so the plan fits what is already there.
 
@@ -41,6 +42,7 @@ List each gate with "yes" or "no" and one line of evidence:
 - Front end and back end changed together
 - More than 5 tasks
 - Conflict with the constitution
+- UI, data or hosting decision not yet made (the Stack section or `docs/design.md` leaves it open, and this plan needs it)
 
 If a gate needs a decision from the owner, write the question and a proposed default under the gate.
 Do not ask anywhere else.

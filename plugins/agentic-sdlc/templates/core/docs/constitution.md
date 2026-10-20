@@ -7,7 +7,7 @@
 - (What matters most, in order.)
 
 ## Stack
-- (Languages, frameworks, hosting.)
+- (Languages, frameworks, hosting. The needs step proposes this after the first spec; you approve it by merging its PR.)
 
 ## Quality bar
 - Typecheck, lint, unit tests for critical components, integration test per acceptance criterion.

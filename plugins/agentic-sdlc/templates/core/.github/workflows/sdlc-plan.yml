@@ -10,15 +10,47 @@ permissions:
   issues: write
   id-token: write
 jobs:
-  plan:
-    # A merged spec PR starts planning. Re-adding state:spec-approved by hand starts it again.
+  gate:
+    # A first spec waits for the needs step: planning starts from the merged needs PR instead.
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
        github.event.pull_request.merged_by.login == github.repository_owner &&
        startsWith(github.event.pull_request.head.ref, 'chore/docs/') &&
-       contains(github.event.pull_request.head.ref, '-spec-')) ||
+       (contains(github.event.pull_request.head.ref, '-spec-') || contains(github.event.pull_request.head.ref, '-needs-'))) ||
       (github.event_name == 'issues' && github.event.label.name == 'state:spec-approved' &&
        github.event.sender.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.decide.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: decide
+        env:
+          HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # Wait only for a merged spec PR, while no design exists and needs are on. A merged needs PR or a label starts the plan.
+          case "$HEAD" in *-spec-*) spec=true;; *) spec=false;; esac
+          if [ "$spec" = true ] && [ ! -f docs/design.md ] && [ "$(yq '.needs.enabled // true' .sdlc/config.yml)" != false ]; then
+            echo "Waiting for the needs step (docs/design.md is missing)."; echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  plan:
+    # A merged spec PR starts planning. Re-adding state:spec-approved by hand starts it again.
+    needs: gate
+    if: >-
+      needs.gate.outputs.go == 'true' && (
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+       github.event.pull_request.merged_by.login == github.repository_owner &&
+       startsWith(github.event.pull_request.head.ref, 'chore/docs/') &&
+       (contains(github.event.pull_request.head.ref, '-spec-') || contains(github.event.pull_request.head.ref, '-needs-'))) ||
+      (github.event_name == 'issues' && github.event.label.name == 'state:spec-approved' &&
+       github.event.sender.login == github.repository_owner))
     concurrency:
       group: sdlc-issue-${{ github.event.issue.number || github.event.pull_request.head.ref }}
       cancel-in-progress: false
@@ -42,7 +74,7 @@ jobs:
           NUM: ${{ github.event.issue.number }}
           HEAD: ${{ github.event.pull_request.head.ref }}
         run: |
-          [ -n "$NUM" ] || NUM=$(echo "$HEAD" | sed -nE 's#^chore/docs/([0-9]+)-spec-.*#\1#p')
+          [ -n "$NUM" ] || NUM=$(echo "$HEAD" | sed -nE 's#^chore/docs/([0-9]+)-(spec|needs)-.*#\1#p')
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
 
       - name: Plan (dry run)

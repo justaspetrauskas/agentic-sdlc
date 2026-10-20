@@ -1,0 +1,118 @@
+name: sdlc-needs
+on:
+  pull_request:
+    types: [closed]
+  # Run it by hand for one issue: gh workflow run sdlc-needs.yml -f issue=<number>
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number with a merged spec"
+        required: true
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+jobs:
+  needs:
+    # Once per project: a merged first spec starts it. Planning waits for the PR this opens (see sdlc-plan).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.merged_by.login == github.repository_owner &&
+       startsWith(github.event.pull_request.head.ref, 'chore/docs/') &&
+       contains(github.event.pull_request.head.ref, '-spec-'))
+    concurrency:
+      group: sdlc-issue-${{ inputs.issue || github.event.pull_request.head.ref }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+        with:
+          agent: true
+
+      - if: steps.guard.outputs.paused == 'true'
+        run: echo "Pipeline is paused. Nothing to do."
+
+      - id: issue
+        if: steps.guard.outputs.paused != 'true'
+        env:
+          INPUT: ${{ inputs.issue }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          num=$INPUT
+          [ -n "$num" ] || num=$(echo "$HEAD" | sed -nE 's#^chore/docs/([0-9]+)-spec-.*#\1#p')
+          echo "number=$num" >> "$GITHUB_OUTPUT"
+          # Decided already (docs/design.md exists) or switched off in config: planning goes ahead without this step.
+          if [ -f docs/design.md ] || [ "$(yq '.needs.enabled // true' .sdlc/config.yml)" = false ]; then
+            echo "Needs are already decided or turned off."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Needs (dry run)
+        if: steps.issue.outputs.run == 'true' && steps.guard.outputs.dry_run == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/needs.md.
+            Issue number: ${{ steps.issue.outputs.number }}
+            Mode: dry-run.
+          claude_args: >-
+            --model opus
+            --max-turns 40
+            --allowedTools "Read,Write,Glob,Grep,WebSearch,WebFetch,Bash(gh issue view:*)"
+
+      - name: Show preview
+        if: steps.issue.outputs.run == 'true' && steps.guard.outputs.dry_run == 'true'
+        run: |
+          { echo "## Needs preview (dry run)"; cat .sdlc/tmp/needs-preview.md 2>/dev/null || echo "No proposal was written."; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Needs (live)
+        if: steps.issue.outputs.run == 'true' && steps.guard.outputs.dry_run != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow .sdlc/prompts/needs.md.
+            Issue number: ${{ steps.issue.outputs.number }}
+            Mode: live.
+          claude_args: >-
+            --model opus
+            --max-turns 40
+            --allowedTools "Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)"
+
+      - name: Record run
+        if: always() && steps.issue.outputs.run == 'true'
+        uses: ./.github/actions/sdlc-record
+        with:
+          stage: needs
+          issue: ${{ steps.issue.outputs.number }}
+          model: opus
+
+      - name: Wait for the owner
+        if: steps.issue.outputs.run == 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh issue edit "${{ steps.issue.outputs.number }}" --add-label needs-you
+
+      - name: Usage report
+        if: always() && steps.issue.outputs.run == 'true'
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$f" ]; then
+            echo "## Usage" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.[] | select(.type=="result") | "- cost (API-equivalent): $\(.total_cost_usd)\n- turns: \(.num_turns)\n- output tokens: \(.usage.output_tokens)\n- cache read tokens: \(.usage.cache_read_input_tokens)"' "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          fi

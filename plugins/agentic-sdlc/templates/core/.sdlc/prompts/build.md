@@ -9,6 +9,7 @@ and the PR text plain.
   expected result. Write a test that reproduces it first, then fix it with the smallest change.
 - The plan file, the spec it links to (`docs/specs/<parent>-*.md`) and `docs/constitution.md`.
 - The code that is already there. Follow its structure and style.
+- `docs/design.md`, for any task that touches a screen.
 
 ## Build
 - Do only this task. If another task in the plan is needed first, stop and say so in your final message.
@@ -19,6 +20,10 @@ and the PR text plain.
   CI already exists (`.github/workflows/sdlc-ci.yml` runs those three scripts). Do not add another CI workflow.
 - Touch only the files the task lists, plus their tests. Touch a protected path or add a dependency only if
   the task or plan says so. CI checks this and stops the PR otherwise.
+- UI work follows `docs/design.md`: its fonts, tokens, breakpoints, max widths, component library and icon library.
+  Icons come from the chosen icon library, never emojis or hand-drawn SVGs. Check each changed screen at phone width
+  (320px) and at desktop width: no horizontal scroll, content capped at the max width, touch targets of at least 44px.
+  If `docs/design.md` is missing and the task needs a screen, stop and say so in your final message.
 - Never read, print or write secrets or `.env` files. Environment variables are the owner's job: if the task
   needs one, say so in the PR body under "Needs you".
 

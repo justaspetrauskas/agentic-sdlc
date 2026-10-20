@@ -14,6 +14,9 @@ can merge. You look for what they cannot see. You are read-only apart from one c
 3. Bugs the tests miss: edge cases from the spec, error handling, accessibility, security (secrets, injection,
    unsafe HTML).
 4. Conflicts with the constitution.
+5. UI changes follow `docs/design.md`. Blocking: it is ignored (fonts, tokens, breakpoints, max widths, component
+   library), the screen scrolls sideways on a phone, an emoji or hand-drawn SVG is used as an icon, or a banned
+   font (Inter, Roboto, Arial, system-ui defaults) is used.
 
 ## Report
 Post one PR comment with `gh pr comment`:

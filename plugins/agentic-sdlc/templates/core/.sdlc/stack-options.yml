@@ -9,3 +9,29 @@ backend:
   - Node + Fastify
   - Node + Hono
   - Node + NestJS
+# Added for the needs step. Notes name the free path only; the step checks current limits before proposing one.
+ui:
+  components:
+    - none (plain scoped CSS; no library)
+    - shadcn/ui (copied-in components on Radix + Tailwind; free, no service)
+    - Radix UI primitives (unstyled, accessible; free, no service)
+  icons:
+    - none
+    - lucide-react (free, MIT; tree-shakeable SVG components)
+    - Phosphor Icons (free, MIT)
+database:
+  - none
+  - Neon Postgres (free tier; verify limits)
+  - Supabase Postgres (free tier; verify limits)
+  - Turso SQLite (free tier; verify limits)
+hosting:
+  - Cloudflare Pages (static or framework front end; free tier)
+  - Cloudflare Workers (API or full-stack; free tier)
+  - GitHub Pages (static only; free for public repos)
+auth:
+  - none
+  - provider built-in auth of the chosen database (Neon Auth, Supabase Auth; free tier)
+  - Cloudflare Access (gates a whole site; free tier)
+testing:
+  - integration only (Vitest; the default quality bar)
+  - integration + e2e (Vitest plus Playwright; for flows that span pages)

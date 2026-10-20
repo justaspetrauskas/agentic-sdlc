@@ -8,6 +8,8 @@ limits:
   active_items: 1
   daily_runs: 20     # agent runs per day, counted from the run ledger
   retries: 2
+needs:
+  enabled: true      # decides stack and docs/design.md after the first spec; false skips it
 gates:
   protected_paths:
     - ".github/**"
