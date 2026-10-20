@@ -1,5 +1,9 @@
 name: sdlc-guard
 description: Report whether the pipeline is paused, whether it is in dry-run mode, and whether the product lead is on
+inputs:
+  agent:
+    description: "true for a workflow that starts agent runs: it also reports paused once the daily cap is used up"
+    default: "false"
 outputs:
   paused:
     description: "true if the control issue has the PAUSE label"
@@ -18,12 +22,18 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         GH_REPO: ${{ github.repository }}
+        AGENT: ${{ inputs.agent }}
       run: |
         issue=$(yq '.control_issue' .sdlc/config.yml)
         dry=$(yq '.dry_run' .sdlc/config.yml)
         if [ "$(yq '.product_lead' .sdlc/config.yml)" = "false" ]; then lead=false; else lead=true; fi
         labels=$(gh issue view "$issue" --json labels --jq '.labels[].name')
         if echo "$labels" | grep -qx "PAUSE"; then paused=true; else paused=false; fi
+        if [ "$AGENT" = true ] && [ "$paused" = false ]; then
+          cap=$(yq '.limits.daily_runs // 20' .sdlc/config.yml)
+          used=$(python3 .sdlc/scripts/ledger.py count --today "$(yq '.timezone // "UTC"' .sdlc/config.yml)")
+          if [ "$used" -ge "$cap" ]; then paused=true; echo "::warning::Daily cap reached ($used of $cap agent runs today)"; fi
+        fi
         echo "paused=$paused" >> "$GITHUB_OUTPUT"
         echo "dry_run=$dry" >> "$GITHUB_OUTPUT"
         echo "product_lead=$lead" >> "$GITHUB_OUTPUT"

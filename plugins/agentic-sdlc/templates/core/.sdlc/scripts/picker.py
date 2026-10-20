@@ -1,8 +1,10 @@
 """Pick the next task to build. A plain script, not an agent: at most one active item per repo.
 
-Usage: python3 .sdlc/scripts/picker.py [--dry-run]
+Usage: python3 .sdlc/scripts/picker.py [--dry-run] [--window HH:MM-HH:MM --tz ZONE]
+       A window keeps non-critical builds to those hours; leave it out to build at any hour.
        python3 .sdlc/scripts/picker.py --test
 """
+import datetime
 import json
 import re
 import subprocess
@@ -41,15 +43,23 @@ def choose(parents, tasks, direct=()):
         elif open_tasks and not started:
             started = True
             if not (labels(open_tasks[0]) & STOP):
-                pick = open_tasks[0]
+                pick = {**open_tasks[0], "critical": "critical" in labels(p)}
     return done, pick
+
+
+def in_window(window, tz, now=None):
+    """True when the local time in tz is inside HH:MM-HH:MM; a window may wrap past midnight."""
+    from zoneinfo import ZoneInfo
+    now = (now or datetime.datetime.now(datetime.timezone.utc)).astimezone(ZoneInfo(tz)).strftime("%H:%M")
+    start, end = window.split("-")
+    return start <= now < end if start <= end else now >= start or now < end
 
 
 def gh(*args):
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
-def main(dry):
+def main(dry, window=None, tz="UTC"):
     prs = json.loads(gh("pr", "list", "--state", "open", "--json", "number,headRefName"))
     busy = [p for p in prs if p["headRefName"].startswith(("fix/", "update/"))]
     building = json.loads(gh("issue", "list", "--label", "state:building", "--state", "open", "--json", "number"))
@@ -75,6 +85,9 @@ def main(dry):
         return
     if not pick:
         print("Nothing to build.")
+        return
+    if window and not pick["critical"] and not in_window(window, tz):
+        print(f"#{pick['number']} waits for the night window {window} ({tz}).")
         return
     print(f"build #{pick['number']} {pick['title']}")
     if not dry:
@@ -108,8 +121,17 @@ def test():
     assert choose(parents, [t(25, 2, 2, 7)], [bug])[1]["number"] == 39  # a direct fix is its own task, ahead of ideas
     blocked = {**bug, "labels": lab("type:fix", "needs-you")}
     assert choose(parents, [t(25, 2, 2, 7)], [blocked])[1] is None  # and blocks like any item when it waits for you
+    assert choose(parents, [t(25, 2, 2, 7)])[1]["critical"] is False
+    crit = {**parents[0], "labels": lab("type:idea", "state:planned", "critical")}
+    assert choose([crit], [t(18, 1, 1, 13)])[1]["critical"] is True  # critical comes from the parent
+    from zoneinfo import ZoneInfo
+    at = lambda h, m: datetime.datetime(2026, 10, 20, h, m, tzinfo=ZoneInfo("Europe/Copenhagen"))
+    assert in_window("01:00-06:00", "Europe/Copenhagen", at(1, 0)) and not in_window("01:00-06:00", "Europe/Copenhagen", at(6, 0))
+    assert in_window("22:00-04:00", "Europe/Copenhagen", at(23, 30)) and not in_window("22:00-04:00", "Europe/Copenhagen", at(12, 0))
     print("ok")
 
 
 if __name__ == "__main__":
-    test() if sys.argv[1:] == ["--test"] else main("--dry-run" in sys.argv)
+    a = sys.argv[1:]
+    arg = lambda k, d=None: a[a.index(k) + 1] if k in a else d
+    test() if a == ["--test"] else main("--dry-run" in a, arg("--window"), arg("--tz", "UTC"))

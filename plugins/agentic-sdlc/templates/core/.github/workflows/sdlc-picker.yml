@@ -16,7 +16,7 @@ concurrency:
 jobs:
   pick:
     # A plain script, not an agent. After each merge it starts the next task of the highest-priority planned item.
-    # ponytail: no night window or daily cap yet (M2); spec and plan stay started by you, as your approval gates.
+    # Spec and plan stay started by you, as your approval gates.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -24,6 +24,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/sdlc-guard
+        with:
+          agent: true
 
       - if: steps.guard.outputs.paused == 'true'
         run: echo "Pipeline is paused. Nothing to do."
@@ -33,4 +35,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           DRY: ${{ steps.guard.outputs.dry_run == 'true' && '--dry-run' || '' }}
-        run: python3 .sdlc/scripts/picker.py $DRY | tee -a "$GITHUB_STEP_SUMMARY"
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          # The window applies to scheduled and push runs; a run you start by hand ignores it, and so do critical items.
+          window=""
+          if [ "$MANUAL" != true ] && [ "$(yq '.night_window.enabled // true' .sdlc/config.yml)" = true ]; then
+            window="--window $(yq '.night_window.start' .sdlc/config.yml)-$(yq '.night_window.end' .sdlc/config.yml) --tz $(yq '.timezone // "UTC"' .sdlc/config.yml)"
+          fi
+          python3 .sdlc/scripts/picker.py $DRY $window | tee -a "$GITHUB_STEP_SUMMARY"

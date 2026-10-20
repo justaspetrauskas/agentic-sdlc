@@ -31,6 +31,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/sdlc-guard
+        with:
+          agent: true
 
       - if: steps.guard.outputs.paused == 'true'
         run: echo "Pipeline is paused. Nothing to do."
@@ -94,6 +96,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: gh issue edit "${{ steps.issue.outputs.number }}" --add-label needs-you
+
+      - name: Record run
+        if: always() && steps.guard.outputs.paused != 'true'
+        uses: ./.github/actions/sdlc-record
+        with:
+          stage: plan
+          issue: ${{ steps.issue.outputs.number }}
+          model: opus
 
       - name: Usage report
         if: always() && steps.guard.outputs.paused != 'true'

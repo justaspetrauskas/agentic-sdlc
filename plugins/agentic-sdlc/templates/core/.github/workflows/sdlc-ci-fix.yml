@@ -1,0 +1,58 @@
+name: sdlc-ci-fix
+on:
+  workflow_run:
+    workflows: [sdlc-ci]
+    types: [completed]
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+jobs:
+  fix:
+    # A plain script, not an agent. Red CI on a task PR sends the builder back (revise mode), at most `retries` times.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      (startsWith(github.event.workflow_run.head_branch, 'fix/') || startsWith(github.event.workflow_run.head_branch, 'update/'))
+    concurrency:
+      group: sdlc-ci-fix-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: guard
+        uses: ./.github/actions/sdlc-guard
+        with:
+          agent: true
+
+      - if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          read -r pr head < <(gh pr list --head "$BRANCH" --state open --json number,headRefOid --jq '.[0] | "\(.number) \(.headRefOid)"')
+          # A newer push has its own CI run.
+          [ -n "$pr" ] && [ "$head" = "$SHA" ] || { echo "No open PR at this commit."; exit 0; }
+          task=$(gh pr view "$pr" --json body --jq .body | sed -nE 's/^Closes #([0-9]+).*/\1/p' | head -n1)
+          [ -n "$task" ] || { echo "Not a task PR."; exit 0; }
+          # needs-you means the tripwire (or you) already took this task; state:blocked means retries ran out.
+          if gh issue view "$task" --json labels --jq '.labels[].name' | grep -qxE 'needs-you|state:blocked'; then
+            echo "Task #$task waits for you."; exit 0
+          fi
+          used=$(python3 .sdlc/scripts/ledger.py count --issue "$task" --stage revise)
+          if [ "$used" -ge "$(yq '.limits.retries // 2' .sdlc/config.yml)" ]; then
+            gh issue edit "$task" --add-label state:blocked --add-label needs-you
+            gh pr comment "$pr" --body "CI is still red after $used automatic fixes, so this task is blocked and waits for you. $RUN_URL"
+          else
+            gh pr comment "$pr" --body "CI is red. Sending the builder back (fix $((used + 1)) of $(yq '.limits.retries // 2' .sdlc/config.yml)). $RUN_URL"
+            gh workflow run sdlc-build.yml -f pr="$pr" -f request="CI failed on this PR. Read the failing log with: gh run view $RUN_ID --log-failed. Fix the cause, keep the change inside the task, and push."
+          fi

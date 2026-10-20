@@ -7,18 +7,25 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: "Task issue number"
-        required: true
+        description: "Task issue number (build it)"
+        required: false
+      pr:
+        description: "PR number (revise it; sdlc-ci-fix sends this when CI is red)"
+        required: false
+      request:
+        description: "What to change, with pr"
+        required: false
 permissions:
   contents: write
   pull-requests: write
   issues: write
   id-token: write
+  actions: write
 jobs:
   build:
     # You start a task by adding state:building to it. The picker will use workflow_dispatch later.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.task != '') ||
       (github.event.label.name == 'state:building' && github.event.sender.login == github.repository_owner &&
        contains(github.event.issue.labels.*.name, 'type:task'))
     concurrency:
@@ -33,6 +40,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/sdlc-guard
+        with:
+          agent: true
 
       - if: steps.guard.outputs.paused == 'true'
         run: echo "Pipeline is paused. Nothing to do."
@@ -102,6 +111,15 @@ jobs:
             --max-turns 60
             --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(mkdir:*),Bash(git status:*),Bash(git diff:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh pr create:*)"
 
+      - name: Record run
+        id: record
+        if: always() && steps.guard.outputs.paused != 'true' && steps.task.outputs.number != ''
+        uses: ./.github/actions/sdlc-record
+        with:
+          stage: build
+          issue: ${{ steps.task.outputs.number }}
+          model: sonnet
+
       - name: Hand over
         if: always() && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true' && steps.task.outputs.number != ''
         env:
@@ -109,14 +127,26 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TASK: ${{ steps.task.outputs.number }}
           BRANCH: ${{ steps.task.outputs.branch }}
+          OUTCOME: ${{ steps.record.outputs.outcome }}
         run: |
           pr=$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url')
           gh issue edit "$TASK" --remove-label state:building || true
           if [ -n "$pr" ]; then
             gh issue edit "$TASK" --add-label state:in-review
-          else
+          elif [ "$OUTCOME" = rate_limited ]; then
             gh issue edit "$TASK" --add-label needs-you
-            gh issue comment "$TASK" --body "The build run ended without a PR. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            gh issue comment "$TASK" --body "The build hit a rate limit. The pipeline is paused; remove PAUSE and re-add state:building to try again."
+          else
+            # The run just recorded counts as attempt 1, so up to `retries` more attempts follow.
+            # No record means no count to stop a loop, so that case is blocked, never retried.
+            attempts=$(python3 .sdlc/scripts/ledger.py count --issue "$TASK" --stage build)
+            if [ -n "$OUTCOME" ] && [ "$attempts" -le "$(yq '.limits.retries // 2' .sdlc/config.yml)" ]; then
+              gh issue comment "$TASK" --body "The build run ended without a PR (attempt $attempts). Trying again."
+              gh workflow run sdlc-build.yml -f task="$TASK"
+            else
+              gh issue edit "$TASK" --add-label state:blocked --add-label needs-you
+              gh issue comment "$TASK" --body "The build ended without a PR after $attempts attempts, so it is blocked. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            fi
           fi
 
       - name: Usage report
@@ -131,11 +161,12 @@ jobs:
   revise:
     # You comment "/build <what to change>" on a task PR; the builder changes that PR's branch.
     if: >-
-      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
-      github.event.comment.user.login == github.repository_owner &&
-      startsWith(github.event.comment.body, '/build')
+      (github.event_name == 'workflow_dispatch' && inputs.pr != '') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       github.event.comment.user.login == github.repository_owner &&
+       startsWith(github.event.comment.body, '/build'))
     concurrency:
-      group: sdlc-pr-${{ github.event.issue.number }}
+      group: sdlc-pr-${{ github.event.issue.number || inputs.pr }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -147,6 +178,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/sdlc-guard
+        with:
+          agent: true
 
       - if: steps.guard.outputs.paused == 'true'
         run: echo "Pipeline is paused. Nothing to do."
@@ -156,14 +189,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.issue.number }}
-          REQUEST: ${{ github.event.comment.body }}
+          PR: ${{ github.event.issue.number || inputs.pr }}
+          REQUEST: ${{ inputs.request || github.event.comment.body }}
         run: |
           branch=$(gh pr view "$PR" --json headRefName --jq .headRefName)
           case "$branch" in fix/*|update/*) ;; *) echo "Not a task PR."; exit 0;; esac
           git checkout "$branch"
           printf '%s\n' "${REQUEST#/build}" > "$RUNNER_TEMP/request.md"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "number=$PR" >> "$GITHUB_OUTPUT"
+          gh pr view "$PR" --json body --jq .body | sed -nE 's/^Closes #([0-9]+).*/task=\1/p' | head -n1 >> "$GITHUB_OUTPUT"
 
       - name: Revise
         if: steps.pr.outputs.branch != ''
@@ -174,14 +209,22 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             Follow .sdlc/prompts/build.md.
-            PR: ${{ github.event.issue.number }}
+            PR: ${{ steps.pr.outputs.number }}
             Branch: ${{ steps.pr.outputs.branch }} (already checked out)
             Owner's request: in ${{ runner.temp }}/request.md
             Mode: revise.
           claude_args: >-
             --model sonnet
             --max-turns 40
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(mkdir:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(mkdir:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh run view:*)"
+
+      - name: Record run
+        if: always() && steps.pr.outputs.branch != ''
+        uses: ./.github/actions/sdlc-record
+        with:
+          stage: revise
+          issue: ${{ steps.pr.outputs.task || steps.pr.outputs.number }}
+          model: sonnet
 
       - name: Usage report
         if: always() && steps.pr.outputs.branch != ''

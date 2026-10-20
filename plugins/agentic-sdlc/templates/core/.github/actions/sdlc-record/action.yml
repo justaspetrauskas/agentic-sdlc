@@ -1,0 +1,42 @@
+name: sdlc-record
+description: Append one row for an agent run to the run ledger; on a rate limit, add PAUSE
+inputs:
+  stage:
+    description: "spec, product-lead, plan, build, revise or review"
+    required: true
+  issue:
+    description: "Issue number the run worked on (the task for build and revise)"
+    required: true
+  model:
+    description: "Model alias the run used"
+    required: true
+  file:
+    description: "Usage file the run left behind; default is the one claude-code-action writes"
+    default: ""
+outputs:
+  outcome:
+    description: "ok, error or rate_limited"
+    value: ${{ steps.row.outputs.outcome }}
+runs:
+  using: composite
+  steps:
+    - id: row
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        STAGE: ${{ inputs.stage }}
+        ISSUE: ${{ inputs.issue }}
+        MODEL: ${{ inputs.model }}
+        FILE: ${{ inputs.file }}
+      run: |
+        # No usage file means the agent step never started (skipped or crashed early), so there is no run to count.
+        FILE=${FILE:-$RUNNER_TEMP/claude-execution-output.json}
+        [ -f "$FILE" ] || { echo "No usage file. Nothing recorded."; exit 0; }
+        outcome=$(python3 .sdlc/scripts/ledger.py append "$STAGE" "$ISSUE" "$MODEL" "$FILE")
+        echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+        if [ "$outcome" = rate_limited ]; then
+          control=$(yq '.control_issue' .sdlc/config.yml)
+          gh issue edit "$control" --add-label PAUSE
+          gh issue comment "$control" --body "The $STAGE run hit a rate limit, so the pipeline is paused. Remove PAUSE when the limit resets. ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        fi

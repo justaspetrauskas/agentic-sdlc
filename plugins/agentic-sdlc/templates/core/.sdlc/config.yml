@@ -3,10 +3,10 @@ type: web            # web | mobile | claude-plugin | chrome-ext
 dry_run: true        # agents log what they would do, but change nothing
 product_lead: true   # decides non-critical spec questions; false sends every question to you
 timezone: Europe/Copenhagen
-night_window: { start: "01:00", end: "06:00" }
+night_window: { enabled: true, start: "01:00", end: "06:00" }  # enabled: false lets the picker run at any hour
 limits:
   active_items: 1
-  daily_runs: 6
+  daily_runs: 20     # agent runs per day, counted from the run ledger
   retries: 2
 gates:
   protected_paths:
