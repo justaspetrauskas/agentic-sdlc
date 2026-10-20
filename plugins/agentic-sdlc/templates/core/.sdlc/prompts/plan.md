@@ -21,6 +21,12 @@ agents second, so write plain, short sentences.
 
 ## Tasks
 - One task is one build run: a small, reviewable change. Order tasks so each builds on the last.
+- If `docs/design.md` exists and the code does not follow it yet (check the fonts, the tokens in the stylesheet and
+  the icon library in `package.json` against the design), and no earlier plan or open task already adopts it, make
+  the first task "Adopt docs/design.md": install its fonts and icon library, add its tokens and breakpoints, and
+  replace emojis and hand-drawn SVG icons. List those packages under "New dependencies and services" and
+  `package.json` and its lockfile under the task's protected paths. Write `Covers: none (design adoption)`.
+  Later tasks that touch a screen then build on it.
 - Every acceptance criterion in the spec is covered by at least one task. Do not add work the spec does not ask for.
 - The first task of a project with no code yet is the scaffold (stack from the constitution, typecheck, lint,
   test runner, CI).
