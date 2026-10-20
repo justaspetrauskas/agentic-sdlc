@@ -207,6 +207,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # sdlc-ci-fix dispatches this job with GITHUB_TOKEN, so the run is started by this bot.
+          allowed_bots: "github-actions,github-actions[bot]"
           prompt: |
             Follow .sdlc/prompts/build.md.
             PR: ${{ steps.pr.outputs.number }}
