@@ -33,7 +33,7 @@ def decide(f):
         r.append("plan gates fired: " + ", ".join(f["gates"]))
     if f["protected"]:
         r.append("protected paths touched: " + ", ".join(f["protected"]))
-    for name in ("checks", "scope"):
+    for name in ("checks", "scope", "secrets"):
         if f["checks"].get(name) != "SUCCESS":
             r.append(f"CI {name} is not green")
     if f["review"] != NO_BLOCKING:
@@ -89,11 +89,12 @@ def test():
            "  - Question: ok?\n- Data model or API change: yes, a key.\n- More than 5 tasks: no.\n\n## Risks\n- yes: x\n"
     assert gates_fired(plan) == ["New dependency or external service", "Data model or API change"], gates_fired(plan)
     ok = {"enabled": True, "parent_labels": {"type:fix"}, "gates": [], "protected": [],
-          "checks": {"checks": "SUCCESS", "scope": "SUCCESS"}, "review": NO_BLOCKING,
+          "checks": {"checks": "SUCCESS", "scope": "SUCCESS", "secrets": "SUCCESS"}, "review": NO_BLOCKING,
           "blocking_label": False, "needs_you": False, "head_moved": False}
     assert decide(ok) == []
     assert decide({**ok, "parent_labels": {"type:idea"}}) == ["only fixes and UX changes merge themselves"]
-    assert decide({**ok, "checks": {"checks": "SUCCESS", "scope": "FAILURE"}}) == ["CI scope is not green"]
+    assert decide({**ok, "checks": {"checks": "SUCCESS", "scope": "FAILURE", "secrets": "SUCCESS"}}) == ["CI scope is not green"]
+    assert decide({**ok, "checks": {"checks": "SUCCESS", "scope": "SUCCESS"}}) == ["CI secrets is not green"]  # missing counts as not green
     assert decide({**ok, "review": "Review: 1 blocking finding(s)."}) == ["no non-blocking review for the latest commit"]
     assert len(decide({**ok, "enabled": False, "protected": ["package.json"]})) == 2
     print("ok")

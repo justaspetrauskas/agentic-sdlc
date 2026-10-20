@@ -43,9 +43,32 @@ jobs:
       - if: steps.pkg.outputs.present == 'true'
         run: npm test
 
+  secrets:
+    # Scans the commits of a PR (or the whole history on main) for committed secrets. A hit blocks the merge.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks (pinned, checksum verified)
+        run: |
+          v=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz" -o "$RUNNER_TEMP/gitleaks.tgz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan
+        env:
+          RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || '' }}
+        run: |
+          if [ -n "$RANGE" ]; then "$RUNNER_TEMP/gitleaks" git --no-banner --redact --log-opts "$RANGE" .
+          else "$RUNNER_TEMP/gitleaks" git --no-banner --redact .; fi
+
   deploy:
     # Only after checks pass on main, so a red build never deploys.
-    needs: checks
+    needs: [checks, secrets]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
