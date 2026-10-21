@@ -21,7 +21,7 @@ gates:
 auto_merge:
   enabled: false     # stays off until the trust ladder allows it
 notify:
-  url: ""            # optional notification service
+  url: ""            # URL of your notification service (services/notify); empty turns notifying off. The key is the SDLC_NOTIFY_KEY secret
 deploy:
   provider: cloudflare-pages  # cloudflare-pages: sdlc-ci deploys after checks pass on main | none
   project: ""        # cloudflare-pages project name

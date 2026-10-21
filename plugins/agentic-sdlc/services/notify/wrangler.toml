@@ -1,0 +1,12 @@
+name = "sdlc-notify"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Morning digest at 05:00 UTC (07:00 Copenhagen in summer, 06:00 in winter). Free plan allows 5 cron triggers per account.
+[triggers]
+crons = ["0 5 * * *"]
+
+# Create it once: npx wrangler kv namespace create STATE   then paste the id here.
+[[kv_namespaces]]
+binding = "STATE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"

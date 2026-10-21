@@ -140,6 +140,7 @@ jobs:
       - name: Tripwire
         if: steps.task.outputs.number != ''
         env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TASK: ${{ steps.task.outputs.number }}
@@ -156,5 +157,10 @@ jobs:
             body=$(printf 'Tripwire: this PR grew past task #%s, so it waits for you.\n\n%s\n\nMerge it yourself if that is fine, or close it and update the plan.' "$TASK" "$(sed 's/^/- /' "$RUNNER_TEMP/trip.txt")")
             gh pr comment "$PR" --body "$body"
             gh issue edit "$TASK" --add-label needs-you
+            # The PR cannot choose the notify script or config that sees the key: both come from the base branch.
+            mkdir -p "$RUNNER_TEMP/n/scripts"
+            git show "$BASE:.sdlc/scripts/notify.py" > "$RUNNER_TEMP/n/scripts/notify.py"
+            git show "$BASE:.sdlc/config.yml" > "$RUNNER_TEMP/n/config.yml"
+            python3 "$RUNNER_TEMP/n/scripts/notify.py" needs-you "Tripwire: PR ${{ github.event.pull_request.number }} grew past task #$TASK" "${{ github.event.pull_request.html_url }}" "tripwire-${{ github.event.pull_request.number }}"
             cat "$RUNNER_TEMP/trip.txt"; exit 1
           fi

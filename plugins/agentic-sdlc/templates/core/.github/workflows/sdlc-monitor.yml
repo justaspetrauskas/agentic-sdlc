@@ -17,6 +17,8 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+        env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
         run: |
           url=$(yq '.deploy.health_url // ""' .sdlc/config.yml)
           if [ -z "$url" ]; then echo "No deploy.health_url in .sdlc/config.yml. Nothing to check."; exit 0; fi
@@ -28,4 +30,5 @@ jobs:
           open=$(gh issue list --label critical --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
           if [ -n "$open" ]; then echo "Already reported in #$open."; exit 1; fi
           gh issue create --title "$title" --label critical --label needs-you --body "$(printf '%s did not answer twice, a minute apart.\n\nCheck the latest deploy and its environment variables first. On Cloudflare Pages you can roll back to an earlier deployment in the dashboard.\n\nRun: %s' "$url" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")"
+          python3 .sdlc/scripts/notify.py critical "$title" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "health-${{ github.run_id }}"
           exit 1

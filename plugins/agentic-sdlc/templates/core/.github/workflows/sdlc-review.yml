@@ -70,6 +70,7 @@ jobs:
         if: always() && steps.pr.outputs.number != ''
         uses: ./.github/actions/sdlc-record
         with:
+          notify_key: ${{ secrets.SDLC_NOTIFY_KEY }}
           stage: review
           issue: ${{ steps.pr.outputs.number }}
           model: opus

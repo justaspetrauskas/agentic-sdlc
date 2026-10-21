@@ -32,6 +32,7 @@ jobs:
 
       - if: steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
         env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
@@ -52,6 +53,7 @@ jobs:
           if [ "$used" -ge "$(yq '.limits.retries // 2' .sdlc/config.yml)" ]; then
             gh issue edit "$task" --add-label state:blocked --add-label needs-you
             gh pr comment "$pr" --body "CI is still red after $used automatic fixes, so this task is blocked and waits for you. $RUN_URL"
+            python3 .sdlc/scripts/notify.py needs-you "CI still red after $used fixes: task #$task blocked" "$RUN_URL" "blocked-$task"
           else
             gh pr comment "$pr" --body "CI is red. Sending the builder back (fix $((used + 1)) of $(yq '.limits.retries // 2' .sdlc/config.yml)). $RUN_URL"
             gh workflow run sdlc-build.yml -f pr="$pr" -f request="CI failed on this PR. Read the failing log with: gh run view $RUN_ID --log-failed. Fix the cause, keep the change inside the task, and push."

@@ -93,6 +93,7 @@ jobs:
         if: always() && steps.guard.outputs.paused != 'true'
         uses: ./.github/actions/sdlc-record
         with:
+          notify_key: ${{ secrets.SDLC_NOTIFY_KEY }}
           stage: spec
           issue: ${{ github.event.issue.number }}
           model: opus
@@ -122,10 +123,18 @@ jobs:
         if: always() && steps.guard.outputs.paused != 'true'
         uses: ./.github/actions/sdlc-record
         with:
+          notify_key: ${{ secrets.SDLC_NOTIFY_KEY }}
           stage: product-lead
           issue: ${{ github.event.issue.number }}
           model: opus
           file: ${{ runner.temp }}/product-lead-usage.json
+
+      - name: Notify
+        if: success() && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true'
+        env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
+        run: |
+          python3 .sdlc/scripts/notify.py needs-you "Spec update ready: #${{ github.event.issue.number }}" "${{ github.server_url }}/${{ github.repository }}/issues/${{ github.event.issue.number }}" "spec-${{ github.event.issue.number }}-${{ github.run_id }}"
 
       - name: Usage report
         if: always() && steps.guard.outputs.paused != 'true'

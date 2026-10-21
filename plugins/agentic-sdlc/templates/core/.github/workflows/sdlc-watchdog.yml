@@ -24,6 +24,8 @@ jobs:
           ACTOR: ${{ github.actor }}
           OWNER: ${{ github.repository_owner }}
           SIMULATE: ${{ inputs.simulate }}
+        env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
         run: |
           if [ "$ACTOR" = "$OWNER" ] && [ "$SIMULATE" != "true" ]; then
             echo "Push by the owner. Allowed."; exit 0
@@ -42,5 +44,6 @@ jobs:
             --title "Critical: push to main without a merged PR" \
             --label critical --label needs-you \
             --body "Commit $SHA was pushed to main by $ACTOR without a merged pull request. The pipeline is paused (PAUSE on #$issue). Check the commit, revert it if needed, then remove PAUSE to resume."
+          python3 .sdlc/scripts/notify.py critical "Push to main without a merged PR: pipeline paused" "${{ github.server_url }}/${{ github.repository }}/commit/$SHA" "watchdog-$SHA"
           echo "::error::Unreviewed push to main. Pipeline paused."
           exit 1

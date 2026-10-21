@@ -116,6 +116,7 @@ jobs:
         if: always() && steps.guard.outputs.paused != 'true' && steps.task.outputs.number != ''
         uses: ./.github/actions/sdlc-record
         with:
+          notify_key: ${{ secrets.SDLC_NOTIFY_KEY }}
           stage: build
           issue: ${{ steps.task.outputs.number }}
           model: sonnet
@@ -123,6 +124,7 @@ jobs:
       - name: Hand over
         if: always() && steps.guard.outputs.paused != 'true' && steps.guard.outputs.dry_run != 'true' && steps.task.outputs.number != ''
         env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TASK: ${{ steps.task.outputs.number }}
@@ -136,6 +138,7 @@ jobs:
           elif [ "$OUTCOME" = rate_limited ]; then
             gh issue edit "$TASK" --add-label needs-you
             gh issue comment "$TASK" --body "The build hit a rate limit. The pipeline is paused; remove PAUSE and re-add state:building to try again."
+            python3 .sdlc/scripts/notify.py needs-you "Build hit a rate limit: task #$TASK" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "build-$TASK-$GITHUB_RUN_ID"
           else
             # The run just recorded counts as attempt 1, so up to `retries` more attempts follow.
             # No record means no count to stop a loop, so that case is blocked, never retried.
@@ -146,6 +149,7 @@ jobs:
             else
               gh issue edit "$TASK" --add-label state:blocked --add-label needs-you
               gh issue comment "$TASK" --body "The build ended without a PR after $attempts attempts, so it is blocked. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              python3 .sdlc/scripts/notify.py needs-you "Build blocked after $attempts attempts: task #$TASK" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "blocked-$TASK"
             fi
           fi
 
@@ -224,6 +228,7 @@ jobs:
         if: always() && steps.pr.outputs.branch != ''
         uses: ./.github/actions/sdlc-record
         with:
+          notify_key: ${{ secrets.SDLC_NOTIFY_KEY }}
           stage: revise
           issue: ${{ steps.pr.outputs.task || steps.pr.outputs.number }}
           model: sonnet

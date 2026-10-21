@@ -59,13 +59,17 @@ jobs:
       - name: Say why it waits
         if: steps.decide.outputs.merge == 'false'
         env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ steps.decide.outputs.pr }}
         run: |
           body=$(printf '<!-- sdlc:merge -->\nWaits for you to merge:\n%s' "$(sed 's/^/- /' "$RUNNER_TEMP/decision.txt")")
           last=$(gh pr view "$PR" --json comments --jq '[.comments[] | select(.body | startswith("<!-- sdlc:merge -->"))][-1].body // ""')
-          [ "$last" = "$body" ] || gh pr comment "$PR" --body "$body"
+          if [ "$last" != "$body" ]; then
+            gh pr comment "$PR" --body "$body"
+            python3 .sdlc/scripts/notify.py needs-you "PR #$PR waits for you to merge" "${{ github.server_url }}/${{ github.repository }}/pull/$PR" "merge-wait-$PR"
+          fi
 
       # The app token makes the merge push trigger CI, deploy, picker and watchdog. GITHUB_TOKEN would not.
       - id: app
@@ -78,6 +82,7 @@ jobs:
       - name: Merge
         if: steps.decide.outputs.merge == 'true'
         env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ steps.decide.outputs.pr }}
@@ -85,3 +90,4 @@ jobs:
         run: |
           gh api "repos/$GH_REPO/issues/$PR/labels" -f "labels[]=auto-merged" > /dev/null
           gh pr merge "$PR" --squash --delete-branch --match-head-commit "$SHA"
+          python3 .sdlc/scripts/notify.py info "Auto-merged PR #$PR" "${{ github.server_url }}/${{ github.repository }}/pull/$PR" "merged-$PR"

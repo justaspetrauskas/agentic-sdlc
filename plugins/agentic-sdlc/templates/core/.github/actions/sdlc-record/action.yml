@@ -10,6 +10,9 @@ inputs:
   model:
     description: "Model alias the run used"
     required: true
+  notify_key:
+    description: "SDLC_NOTIFY_KEY, only used to tell you about a rate limit"
+    default: ""
   file:
     description: "Usage file the run left behind; default is the one claude-code-action writes"
     default: ""
@@ -29,6 +32,7 @@ runs:
         ISSUE: ${{ inputs.issue }}
         MODEL: ${{ inputs.model }}
         FILE: ${{ inputs.file }}
+        SDLC_NOTIFY_KEY: ${{ inputs.notify_key }}
       run: |
         # No usage file means the agent step never started (skipped or crashed early), so there is no run to count.
         FILE=${FILE:-$RUNNER_TEMP/claude-execution-output.json}
@@ -39,4 +43,5 @@ runs:
           control=$(yq '.control_issue' .sdlc/config.yml)
           gh issue edit "$control" --add-label PAUSE
           gh issue comment "$control" --body "The $STAGE run hit a rate limit, so the pipeline is paused. Remove PAUSE when the limit resets. ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 .sdlc/scripts/notify.py critical "Rate limit hit: pipeline paused" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "ratelimit-${{ github.run_id }}"
         fi

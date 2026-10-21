@@ -97,6 +97,7 @@ jobs:
         if: always() && steps.issue.outputs.run == 'true'
         uses: ./.github/actions/sdlc-record
         with:
+          notify_key: ${{ secrets.SDLC_NOTIFY_KEY }}
           stage: needs
           issue: ${{ steps.issue.outputs.number }}
           model: opus
@@ -104,9 +105,12 @@ jobs:
       - name: Wait for the owner
         if: steps.issue.outputs.run == 'true' && steps.guard.outputs.dry_run != 'true'
         env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh issue edit "${{ steps.issue.outputs.number }}" --add-label needs-you
+        run: |
+          gh issue edit "${{ steps.issue.outputs.number }}" --add-label needs-you
+          python3 .sdlc/scripts/notify.py needs-you "Stack and design proposal ready: #${{ steps.issue.outputs.number }}" "${{ github.server_url }}/${{ github.repository }}/issues/${{ steps.issue.outputs.number }}" "needs-${{ steps.issue.outputs.number }}"
 
       - name: Usage report
         if: always() && steps.issue.outputs.run == 'true'
