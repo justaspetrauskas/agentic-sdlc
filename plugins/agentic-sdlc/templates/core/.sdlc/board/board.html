@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDLC Board</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb; --surface-2: #f3f2ef; --border: #dcdad4;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #6f6e69;
+  --series-1: #2a78d6; --grid: #e6e4de;
+  --radius: 8px; --gutter: 16px; --max: 72rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --surface-2: #242423; --border: #3a3a38;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #a3a29a;
+    --series-1: #3987e5; --grid: #2e2e2c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19; --surface-2: #242423; --border: #3a3a38;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #a3a29a;
+  --series-1: #3987e5; --grid: #2e2e2c;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-1); color: var(--text-primary);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: var(--max); margin: 0 auto; padding: 24px var(--gutter) 48px; }
+h1 { font-size: 1.4rem; margin: 0; }
+h2 { font-size: 1rem; margin: 32px 0 8px; }
+.sub { color: var(--text-secondary); margin: 4px 0 0; font-size: .875rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 8px; margin-top: 16px; }
+.tile { background: var(--surface-2); border-radius: var(--radius); padding: 12px; }
+.tile b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.tile span { color: var(--text-secondary); font-size: .8125rem; }
+.meter { margin-top: 16px; }
+.meter .track { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; margin-top: 6px; }
+.meter .fill { height: 100%; background: var(--series-1); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 16px; }
+.card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-width: 0; }
+.card h2 { margin-top: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+button.link { background: none; border: 0; color: var(--text-secondary); font: inherit; font-size: .8125rem;
+  text-decoration: underline; cursor: pointer; padding: 4px; min-height: 28px; }
+svg { width: 100%; height: auto; display: block; overflow: visible; }
+svg text { fill: var(--text-secondary); font-size: 11px; font-family: inherit; }
+svg .val { fill: var(--text-primary); font-weight: 600; }
+.bar { fill: var(--series-1); }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.capline { stroke: var(--text-secondary); stroke-width: 1; stroke-dasharray: 4 3; }
+.wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: .875rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 10px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+th { color: var(--text-secondary); font-weight: 600; cursor: pointer; background: var(--surface-2); }
+tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; }
+.tip { position: fixed; pointer-events: none; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font-size: .8125rem; display: none; z-index: 5; max-width: 16rem; }
+.empty { color: var(--text-secondary); padding: 24px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SDLC Board</h1>
+  <p class="sub" id="sub"></p>
+  <div class="meter" id="meter"></div>
+  <div class="tiles" id="tiles"></div>
+  <h2>Outcomes</h2>
+  <div class="tiles" id="outcomes"></div>
+  <h2>Spend</h2>
+  <div class="charts" id="charts"></div>
+  <h2>By issue</h2>
+  <div class="wrap"><table id="issues"></table></div>
+  <h2>Recent runs</h2>
+  <div class="wrap"><table id="runs"></table></div>
+</main>
+<div class="tip" id="tip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const $ = (id) => document.getElementById(id);
+const usd = (n) => "$" + n.toFixed(2);
+const int = (n) => n.toLocaleString("en");
+const dur = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? (s / 3600).toFixed(1) + " h" : s >= 60 ? Math.round(s / 60) + " min" : s + " s"; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const tip = $("tip");
+function showTip(e, html) {
+  tip.innerHTML = html; tip.style.display = "block";
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = e.clientY + 12 + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+
+$("sub").textContent = `${D.repo} · updated ${new Date(D.generated).toLocaleString()} · days in ${D.tz} · cost is API-equivalent`;
+const pct = Math.min(100, Math.round((D.cap.used / D.cap.limit) * 100));
+$("meter").innerHTML = `<div>Daily cap today: <b>${D.cap.used} of ${D.cap.limit}</b> agent runs${D.cap.used >= D.cap.limit ? " (cap reached, agents wait for tomorrow)" : ""}</div>
+  <div class="track" role="img" aria-label="${pct}% of the daily cap used"><div class="fill" style="width:${pct}%"></div></div>`;
+
+const tile = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
+const T = D.total, O = D.outcomes;
+$("tiles").innerHTML = tile(usd(T.cost), "total cost") + tile(int(T.runs), "agent runs") + tile(int(T.turns), "turns") +
+  tile(int(T.tokens), "output tokens") + tile(dur(T.ms), "run time");
+$("outcomes").innerHTML = tile(`${O.run_ok} / ${O.run_error} / ${O.run_rate_limited}`, "runs ok / error / rate-limited") +
+  tile(O.task_prs, "task PRs") + tile(`${O.ci_passed} of ${O.task_prs}`, "passed CI") +
+  tile(`${O.merged} (${O.auto_merged} auto)`, "merged") + tile(O.retried_issues, "issues retried") + tile(O.blocked_issues, "issues blocked");
+
+// Vertical bars with a 2px gap, rounded data ends, one value label on the tallest bar, optional dashed reference line.
+function bars(items, { fmt, ref, refLabel }) {
+  const W = 360, H = 170, L = 8, B = 22, T = 16, n = items.length;
+  const max = Math.max(...items.map((i) => i.value), ref || 0) || 1;
+  const slot = (W - L) / n, bw = Math.max(2, Math.min(28, slot - 2));
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="bar chart">`;
+  s += `<line class="gridline" x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>`;
+  if (ref) s += `<line class="capline" x1="${L}" x2="${W}" y1="${y(ref)}" y2="${y(ref)}"/><text x="${W}" y="${y(ref) - 4}" text-anchor="end">${refLabel}</text>`;
+  const top = items.reduce((a, i, k) => (i.value > items[a].value ? k : a), 0);
+  items.forEach((it, k) => {
+    const x = L + k * slot + (slot - bw) / 2, h = Math.max(1, y(0) - y(it.value)), r = Math.min(4, bw / 2, h);
+    s += `<path class="bar" d="M${x},${y(0)} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${bw - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z"/>`;
+    if (k === top && it.value > 0) s += `<text class="val" x="${x + bw / 2}" y="${y(it.value) - 4}" text-anchor="middle">${fmt(it.value)}</text>`;
+    if (n <= 8 || k % Math.ceil(n / 6) === 0) s += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(it.label.slice(5))}</text>`;
+    s += `<rect data-k="${k}" x="${L + k * slot}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent"/>`;
+  });
+  return s + "</svg>";
+}
+// Horizontal bars with the value written at the end of each bar.
+function hbars(items, fmt) {
+  const max = Math.max(...items.map((i) => i.value)) || 1, rowH = 26, W = 360, LW = 96;
+  let s = `<svg viewBox="0 0 ${W} ${items.length * rowH + 4}" role="img" aria-label="bar chart by stage">`;
+  items.forEach((it, k) => {
+    const w = Math.max(2, ((W - LW - 56) * it.value) / max), y = k * rowH + 4;
+    s += `<text x="0" y="${y + 14}">${esc(it.label)}</text><rect class="bar" x="${LW}" y="${y + 3}" width="${w}" height="12" rx="4"/>`;
+    s += `<text class="val" x="${LW + w + 6}" y="${y + 14}">${fmt(it.value)}</text>`;
+    s += `<rect data-k="${k}" x="0" y="${y}" width="${W}" height="${rowH}" fill="transparent"/>`;
+  });
+  return s + "</svg>";
+}
+function card(title, id, items, svg, cols) {
+  const el = document.createElement("div"); el.className = "card"; let asTable = false;
+  const draw = () => {
+    el.innerHTML = `<h2>${title}<button class="link" type="button">${asTable ? "chart" : "table"}</button></h2>` +
+      (items.length ? (asTable ? tableHtml(cols, items.map((i) => i.row)) : svg) : `<div class="empty">No runs yet.</div>`);
+    el.querySelector("button").onclick = () => { asTable = !asTable; draw(); };
+    el.querySelectorAll("rect[data-k]").forEach((r) => {
+      r.onmousemove = (e) => showTip(e, items[r.dataset.k].tip); r.onmouseleave = hideTip;
+    });
+  };
+  draw(); $("charts").appendChild(el);
+}
+function tableHtml(cols, rows) {
+  return `<div class="wrap"><table><thead><tr>${cols.map((c) => `<th class="${c.n ? "n" : ""}">${c.h}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map((r) => `<tr>${r.map((v, i) => `<td class="${cols[i].n ? "n" : ""}">${v}</td>`).join("")}</tr>`).join("") + "</tbody></table></div>";
+}
+
+const days = D.days.slice(-14);
+const dayCols = [{ h: "Day" }, { h: "Runs", n: 1 }, { h: "Cost", n: 1 }, { h: "Turns", n: 1 }];
+const dayTip = (d) => `<b>${d.day}</b><br>${d.runs} runs · ${usd(d.cost)}<br>${int(d.turns)} turns · ${dur(d.ms)}`;
+card("Cost per day", "cost", days.map((d) => ({ value: d.cost, label: d.day, tip: dayTip(d), row: [d.day, d.runs, usd(d.cost), d.turns] })),
+  bars(days.map((d) => ({ value: d.cost, label: d.day })), { fmt: usd }), dayCols);
+card("Runs per day", "runs", days.map((d) => ({ value: d.runs, label: d.day, tip: dayTip(d), row: [d.day, d.runs, usd(d.cost), d.turns] })),
+  bars(days.map((d) => ({ value: d.runs, label: d.day })), { fmt: String, ref: D.cap.limit, refLabel: `cap ${D.cap.limit}` }), dayCols);
+const st = D.stages;
+card("Cost by stage", "stage", st.map((s) => ({ value: s.cost, label: s.stage, tip: `<b>${esc(s.stage)}</b><br>${s.runs} runs · ${usd(s.cost)}<br>${int(s.turns)} turns`, row: [esc(s.stage), s.runs, usd(s.cost), s.turns] })),
+  hbars(st.map((s) => ({ value: s.cost, label: s.stage })), usd), [{ h: "Stage" }, { h: "Runs", n: 1 }, { h: "Cost", n: 1 }, { h: "Turns", n: 1 }]);
+
+// Sortable tables: click a header to sort by it.
+function sortable(id, cols, rows, key0 = 0) {
+  let key = key0, dir = -1;
+  const draw = () => {
+    const sorted = [...rows].sort((a, b) => (a[key].s > b[key].s ? 1 : a[key].s < b[key].s ? -1 : 0) * dir);
+    $(id).innerHTML = `<thead><tr>${cols.map((c, i) => `<th class="${c.n ? "n" : ""}" data-i="${i}">${c.h}${i === key ? (dir < 0 ? " ↓" : " ↑") : ""}</th>`).join("")}</tr></thead><tbody>` +
+      sorted.map((r) => `<tr>${r.map((v, i) => `<td class="${cols[i].n ? "n" : ""}">${v.t}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    $(id).querySelectorAll("th").forEach((th) => (th.onclick = () => { const i = +th.dataset.i; dir = i === key ? -dir : -1; key = i; draw(); }));
+  };
+  rows.length ? draw() : ($(id).innerHTML = `<tbody><tr><td class="empty">No runs yet.</td></tr></tbody>`);
+}
+const cell = (t, s = t) => ({ t, s });
+sortable("issues", [{ h: "Issue" }, { h: "Runs", n: 1 }, { h: "Cost", n: 1 }, { h: "Turns", n: 1 }, { h: "Output tokens", n: 1 }, { h: "Retried" }, { h: "Stages" }],
+  D.issues.map((i) => [cell(i.issue === null ? "none" : "#" + i.issue, i.issue || 0), cell(i.runs), cell(usd(i.cost), i.cost), cell(i.turns), cell(int(i.tokens), i.tokens),
+    cell(i.retried ? "yes" : "no"), cell(Object.entries(i.stages).map(([k, v]) => `${esc(k)}×${v}`).join(", "))]), 2);
+sortable("runs", [{ h: "When" }, { h: "Stage" }, { h: "Issue" }, { h: "Model" }, { h: "Cost", n: 1 }, { h: "Turns", n: 1 }, { h: "Time", n: 1 }, { h: "Outcome" }],
+  D.runs.slice(0, 100).map((r) => [cell(new Date(r.ts).toLocaleString(), r.ts), cell(esc(r.stage)), cell(r.issue === null ? "none" : "#" + r.issue, r.issue || 0), cell(esc(r.model)),
+    cell(usd(r.cost), r.cost), cell(r.turns), cell(dur(r.duration_ms), r.duration_ms), cell(esc(r.outcome))]));
+</script>
+</body>
+</html>
