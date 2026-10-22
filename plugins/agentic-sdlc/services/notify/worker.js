@@ -8,22 +8,21 @@ const DEDUPE_TTL = 86400; // one day: the same event inside it collapses into on
 const clean = (s, max) => String(s).replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max);
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-async function digest256(s) {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+export async function sha256Hex(s) {
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))));
 }
-// Constant-time comparison of two keys (hash first, so the lengths match).
-async function sameKey(a, b) {
-  const [x, y] = await Promise.all([digest256(a), digest256(b)]);
+// Constant-time comparison (hash both first, so the lengths match).
+async function same(a, b) {
+  const [x, y] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
   let d = 0;
-  for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i];
+  for (let i = 0; i < x.length; i++) d |= x.charCodeAt(i) ^ y.charCodeAt(i);
   return d === 0;
 }
-
-export async function projectFor(env, key) {
-  const keys = JSON.parse(env.PROJECT_KEYS || "{}");
-  let found = null;
-  for (const [project, k] of Object.entries(keys)) if (await sameKey(k, key)) found = project;
-  return found;
+// A project's key is stored hashed in KV as k:<project>, so adding a project needs no redeploy and no secret to re-enter.
+export async function authorized(env, project, key) {
+  const stored = await env.STATE.get(`k:${project}`);
+  return Boolean(stored && key) && same(stored, await sha256Hex(key));
 }
 
 export function validate(b) {
@@ -46,16 +45,15 @@ const line = (e) => `[${e.project}] ${LABEL[e.kind]}: ${e.title}${e.link ? "\n" 
 export async function handleEvent(request, env) {
   if (request.method !== "POST" || new URL(request.url).pathname !== "/v1/events") return json(404, { error: "not found" });
   const key = (request.headers.get("authorization") || "").replace(/^Bearer /, "");
-  const project = key ? await projectFor(env, key) : null;
-  if (!project) return json(401, { error: "bad key" });
   const text = await request.text();
   if (text.length > 4096) return json(413, { error: "body too large" });
   let b;
   try { b = JSON.parse(text); } catch { return json(400, { error: "invalid JSON" }); }
+  // A key speaks only for its own project, so one leaked key cannot impersonate another project.
+  if (!b || typeof b.project !== "string" || !(await authorized(env, b.project, key))) return json(401, { error: "bad key" });
   const bad = validate(b);
   if (bad) return json(400, { error: bad });
-  // A key speaks only for its own project, so one leaked key cannot impersonate another project.
-  if (b.project !== project) return json(401, { error: "key does not belong to this project" });
+  const project = b.project;
   const e = { project, kind: b.kind, title: clean(b.title, 200), link: b.link ? clean(b.link, 300) : "" };
   const dedupe = `d:${project}:${clean(b.dedupe, 100)}`;
   if (await env.STATE.get(dedupe)) return json(200, { status: "duplicate" });

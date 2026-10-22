@@ -1,7 +1,7 @@
 // Run: node --test services/notify/test.js   (no dependencies; Telegram and KV are faked)
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { sendDigest } from "./worker.js";
+import worker, { sendDigest, sha256Hex } from "./worker.js";
 
 const kv = () => {
   const m = new Map();
@@ -13,34 +13,49 @@ const kv = () => {
 const setup = (ok = true) => {
   const sent = [];
   globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init.body).text); return { ok }; };
-  const env = { STATE: kv(), TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "1", PROJECT_KEYS: JSON.stringify({ alpha: "key-a", beta: "key-b" }) };
+  const env = { STATE: kv(), TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "1" };
   return { sent, env };
 };
+const addProject = async (env, project, key) => env.STATE.put(`k:${project}`, await sha256Hex(key));
+const seeded = async (ok = true) => { const x = setup(ok); await addProject(x.env, "alpha", "key-a"); await addProject(x.env, "beta", "key-b"); return x; };
 const post = (env, key, body) => worker.fetch(new Request("https://x/v1/events", {
   method: "POST", headers: { authorization: `Bearer ${key}` }, body: typeof body === "string" ? body : JSON.stringify(body) }), env);
 const ev = (o = {}) => ({ project: "alpha", kind: "needs-you", title: "Plan ready", link: "https://github.com/o/r/pull/1", dedupe: "plan-1", ...o });
 
 test("needs-you is sent at once, tagged with the project", async () => {
-  const { sent, env } = setup();
+  const { sent, env } = await seeded();
   const r = await post(env, "key-a", ev());
   assert.equal((await r.json()).status, "sent");
   assert.equal(sent[0], "[alpha] needs you: Plan ready\nhttps://github.com/o/r/pull/1");
 });
 test("the same dedupe key collapses into one message", async () => {
-  const { sent, env } = setup();
+  const { sent, env } = await seeded();
   await post(env, "key-a", ev());
   assert.equal((await (await post(env, "key-a", ev())).json()).status, "duplicate");
   assert.equal(sent.length, 1);
   assert.equal((await (await post(env, "key-a", ev({ dedupe: "other" }))).json()).status, "sent");
 });
+test("the SHA-256 hex matches what shasum prints, so add-project.sh and the Worker agree", async () => {
+  assert.equal(await sha256Hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+});
+test("an unknown project is refused", async () => {
+  const { env } = await seeded();
+  assert.equal((await post(env, "key-a", ev({ project: "ghost" }))).status, 401);
+});
+test("a new project works as soon as its hash is in KV, with no redeploy", async () => {
+  const { env } = await seeded();
+  assert.equal((await post(env, "key-c", ev({ project: "gamma" }))).status, 401);
+  await addProject(env, "gamma", "key-c");
+  assert.equal((await post(env, "key-c", ev({ project: "gamma" }))).status, 200);
+});
 test("a bad or foreign key is refused", async () => {
-  const { sent, env } = setup();
+  const { sent, env } = await seeded();
   assert.equal((await post(env, "nope", ev())).status, 401);
   assert.equal((await post(env, "key-b", ev())).status, 401); // beta's key cannot speak for alpha
   assert.equal(sent.length, 0);
 });
 test("bad input is refused", async () => {
-  const { env } = setup();
+  const { env } = await seeded();
   assert.equal((await post(env, "key-a", "{nope")).status, 400);
   assert.equal((await post(env, "key-a", ev({ kind: "spam" }))).status, 400);
   assert.equal((await post(env, "key-a", ev({ link: "http://x" }))).status, 400);
@@ -48,14 +63,14 @@ test("bad input is refused", async () => {
   assert.equal((await post(env, "key-a", "x".repeat(5000))).status, 413);
 });
 test("a failed Telegram send is not marked as seen, so a retry goes out", async () => {
-  const bad = setup(false);
+  const bad = await seeded(false);
   assert.equal((await post(bad.env, "key-a", ev())).status, 502);
-  const good = setup(true);
+  const good = await seeded(true);
   good.env.STATE = bad.env.STATE;
   assert.equal((await (await post(good.env, "key-a", ev())).json()).status, "sent");
 });
 test("idea and info wait for the digest, which groups by project and clears the queue", async () => {
-  const { sent, env } = setup();
+  const { sent, env } = await seeded();
   await post(env, "key-a", ev({ kind: "idea", title: "Dark mode", dedupe: "i1" }));
   await post(env, "key-a", ev({ kind: "info", title: "Auto-merged #5", dedupe: "i2" }));
   await post(env, "key-b", ev({ project: "beta", kind: "info", title: "Spec ready", dedupe: "i3" }));
@@ -69,7 +84,7 @@ test("idea and info wait for the digest, which groups by project and clears the 
   assert.equal(sent.length, 1);
 });
 test("a long digest is split under the Telegram limit", async () => {
-  const { sent, env } = setup();
+  const { sent, env } = await seeded();
   for (let i = 0; i < 60; i++) await post(env, "key-a", ev({ kind: "info", title: "x".repeat(150), dedupe: `d${i}` }));
   await sendDigest(env);
   assert.ok(sent.length > 1 && sent.every((m) => m.length <= 4096));

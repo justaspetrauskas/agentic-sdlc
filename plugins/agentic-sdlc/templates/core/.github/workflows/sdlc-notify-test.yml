@@ -1,0 +1,15 @@
+name: sdlc-notify-test
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  test:
+    # Sends one message through the notification service, so you can see the setup works. Skips if it is not set up.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          SDLC_NOTIFY_KEY: ${{ secrets.SDLC_NOTIFY_KEY }}
+        run: |
+          python3 .sdlc/scripts/notify.py needs-you "Test message from $(yq '.project' .sdlc/config.yml)" "${{ github.server_url }}/${{ github.repository }}" "test-${{ github.run_id }}" | tee -a "$GITHUB_STEP_SUMMARY"
