@@ -25,7 +25,9 @@ def send(url, key, project, kind, title, link, dedupe):
     body = json.dumps({"project": project, "kind": kind, "title": title, "link": link or None, "dedupe": dedupe}
                       if link else {"project": project, "kind": kind, "title": title, "dedupe": dedupe}).encode()
     req = urllib.request.Request(url.rstrip("/") + "/v1/events", data=body, method="POST",
-                                 headers={"authorization": f"Bearer {key}", "content-type": "application/json"})
+                                 headers={"authorization": f"Bearer {key}", "content-type": "application/json",
+                                          # Cloudflare answers the default Python-urllib agent with error 1010 (HTTP 403).
+                                          "user-agent": "agentic-sdlc-notify/1"})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r).get("status")
 
@@ -51,7 +53,7 @@ def test():
 
     class H(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
-            got.update(path=self.path, auth=self.headers["authorization"], body=json.loads(self.rfile.read(int(self.headers["content-length"]))))
+            got.update(path=self.path, auth=self.headers["authorization"], agent=self.headers["user-agent"], body=json.loads(self.rfile.read(int(self.headers["content-length"]))))
             self.send_response(200); self.end_headers(); self.wfile.write(b'{"status":"sent"}')
         def log_message(self, *a): pass
 
@@ -60,6 +62,7 @@ def test():
     base = f"http://127.0.0.1:{srv.server_port}/"
     assert send(base, "k", "my-app", "needs-you", "Plan ready", "https://x/y", "plan-1") == "sent"
     assert got["path"] == "/v1/events" and got["auth"] == "Bearer k"
+    assert not got["agent"].startswith("Python-urllib"), got["agent"]
     assert got["body"] == {"project": "my-app", "kind": "needs-you", "title": "Plan ready", "link": "https://x/y", "dedupe": "plan-1"}
     send(base, "k", "my-app", "info", "t", "", "d")
     assert "link" not in got["body"]
