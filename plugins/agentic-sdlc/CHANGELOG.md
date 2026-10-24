@@ -2,6 +2,9 @@
 
 Plugin releases, newest first. A project changes only when you run `/sdlc-upgrade`.
 
+## 0.1.38 - 2026-10-24
+- S3: profiles (web, mobile, claude-plugin, chrome-ext) read by CI and the prompts; upgrade.py installs and upgrades by profile; sdlc-init uses it
+
 ## 0.1.37 - 2026-10-24
 - S2: CHANGELOG.md (backfilled), release.py (bump, tag, since), upgrade PRs list release notes, plugin author
 

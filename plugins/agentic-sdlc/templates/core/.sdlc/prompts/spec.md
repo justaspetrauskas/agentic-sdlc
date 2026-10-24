@@ -6,6 +6,7 @@ so write plain, short sentences.
 ## Read first
 - The issue and its comments: `gh issue view <number> --comments`
 - `docs/constitution.md` (goal, principles, stack, quality bar)
+- `.sdlc/profile.md` (what this project type is and how it is checked and released)
 - Existing specs in `docs/specs/`, so you do not contradict or duplicate them
 
 ## Spec sections

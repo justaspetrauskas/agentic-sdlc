@@ -1,0 +1,11 @@
+frontend:
+  - Plain TypeScript + Vite (no framework)
+  - React + Vite + TypeScript (popup and options pages)
+backend:
+  - none
+storage:
+  - chrome.storage (local or sync; no server)
+hosting:
+  - none (Chrome Web Store upload is always the owner)
+testing:
+  - unit tests (Vitest); e2e only if a flow spans pages

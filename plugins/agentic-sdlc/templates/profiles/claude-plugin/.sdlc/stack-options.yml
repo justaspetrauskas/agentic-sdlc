@@ -1,0 +1,9 @@
+language:
+  - Markdown skills + Node scripts (no build step)
+  - TypeScript for scripts or an MCP server
+backend:
+  - none
+hosting:
+  - GitHub (marketplace repo); nothing else to host
+testing:
+  - unit tests with node --test or Vitest

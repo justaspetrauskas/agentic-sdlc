@@ -10,6 +10,7 @@ and the PR text plain.
 - The plan file, the spec it links to (`docs/specs/<parent>-*.md`) and `docs/constitution.md`.
 - The code that is already there. Follow its structure and style.
 - `docs/design.md`, for any task that touches a screen.
+- `.sdlc/profile.md`: the checks that apply to this project type. Run what it names, in place of the web defaults below when they differ.
 
 ## Build
 - Do only this task. If another task in the plan is needed first, stop and say so in your final message.

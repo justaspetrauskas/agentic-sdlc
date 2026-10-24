@@ -8,7 +8,7 @@ reviews. A person reads it first, so use plain, short sentences.
 ## Read first
 - The approved spec: `docs/specs/<number>-*.md`.
 - `docs/constitution.md` (goal, principles, stack, critical decisions) and `.sdlc/config.yml`.
-- `.sdlc/stack-options.yml`: the only options you may pick from. Never invent one.
+- `.sdlc/stack-options.yml`: the only options you may pick from. Never invent one. `.sdlc/profile.md` says what the project type is; skip an area that type does not have (a plugin has no UI, no hosting).
 - Existing code and `docs/design.md`, if they exist. Decide only what is still undecided; keep what the
   constitution already states.
 

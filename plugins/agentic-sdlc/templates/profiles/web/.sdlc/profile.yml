@@ -1,0 +1,5 @@
+type: web
+node: true            # install Node and run the npm scripts below (skipped until package.json exists)
+scripts: [typecheck, lint, test]   # npm scripts that must exist and pass, in order
+commands: []          # extra shell commands that must pass, run after the scripts
+release: deploy       # deploy: CI deploys main after checks pass (see deploy: in config.yml)

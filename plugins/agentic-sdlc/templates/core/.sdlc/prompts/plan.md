@@ -8,6 +8,7 @@ agents second, so write plain, short sentences.
 - `docs/constitution.md` (goal, principles, stack, quality bar, critical decisions)
 - `docs/design.md` (fonts, tokens, breakpoints, component and icon libraries), when the project has a front end
 - `.sdlc/config.yml` (protected paths)
+- `.sdlc/profile.md` (project type: its checks, its release, what an agent must never do for it)
 - Existing plans in `docs/plans/` and the code in the repo, so the plan fits what is already there.
 
 ## Plan sections

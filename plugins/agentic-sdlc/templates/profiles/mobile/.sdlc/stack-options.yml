@@ -1,0 +1,15 @@
+app:
+  - Expo (React Native) + TypeScript (free)
+  - React Native CLI + TypeScript (free)
+backend:
+  - none
+  - Node + Hono on Cloudflare Workers (free tier)
+database:
+  - none
+  - Turso SQLite (free tier; verify limits)
+  - Supabase Postgres (free tier; verify limits)
+build:
+  - local builds only (npx expo export / gradle / xcodebuild)
+  - EAS Build free tier (verify current limits first)
+testing:
+  - integration only (Jest + React Native Testing Library)

@@ -7,6 +7,7 @@ can merge. You look for what they cannot see. You are read-only apart from one c
 - The PR and its diff: `gh pr view <pr>` and `git diff origin/<base>...<head commit>`.
   The PR's code is not checked out; read its files with `git show <head commit>:<path>`.
 - The task issue named in "Closes #<task>", the plan it names, the spec and `docs/constitution.md`.
+- `.sdlc/profile.md`: what this project type must satisfy (for example a valid manifest, or no store upload by an agent).
 
 ## Check
 1. Every AC the task covers has a test named after it, and the test really checks the AC.

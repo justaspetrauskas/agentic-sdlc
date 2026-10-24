@@ -1,0 +1,7 @@
+type: chrome-ext
+node: true
+scripts: [lint, test]
+commands:
+  - python3 .sdlc/scripts/check_manifest.py
+release: package      # CI zips package_dir as an artifact. Store upload is always you.
+package_dir: dist

@@ -1,0 +1,5 @@
+type: mobile
+node: true
+scripts: [typecheck, lint, test]
+commands: []
+release: none         # build only. Store submission is always you.

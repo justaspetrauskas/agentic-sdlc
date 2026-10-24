@@ -2,8 +2,10 @@
 
 Usage: python3 upgrade.py plan  <repo> [--owner NAME] [--templates DIR ...]        print the plan as JSON, change nothing
        python3 upgrade.py apply <repo> [--owner NAME] [--templates DIR ...] [--take PATH,PATH]   write files and the manifest
+       python3 upgrade.py apply <repo> --init --project NAME --type web|mobile|claude-plugin|chrome-ext --owner NAME   first install
        python3 upgrade.py --test
-Later --templates dirs override earlier ones (core first, then a profile). Git, the branch and the PR are the caller's job.
+Templates are core plus the profile of the repo's `type:` (templates/profiles/<type>); later directories override earlier ones.
+Git, the branch and the PR are the caller's job.
 Classes: new | same | update (repo file untouched since install) | edited (you changed it: kept unless in --take)
          | config (.sdlc/config.yml: only missing keys are added) | owned (the constitution is never touched).
 """
@@ -91,6 +93,36 @@ def merge_config(repo_text, tmpl_text):
     return "\n".join(pre + [l for _, ls in mine for l in ls]).rstrip("\n") + "\n", added
 
 
+PROFILES = ("web", "mobile", "claude-plugin", "chrome-ext")
+
+
+def set_type(cfg, type_):
+    """The chosen type goes into the config; types that do not deploy to a web host switch the deploy off, and a project with no UI skips the needs step."""
+    cfg = re.sub(r"^type:.*$", f"type: {type_}            # web | mobile | claude-plugin | chrome-ext", cfg, count=1, flags=re.M)
+    if type_ != "web":
+        cfg = cfg.replace("provider: cloudflare-pages", "provider: none", 1)
+    if type_ == "claude-plugin":
+        cfg = re.sub(r"(?m)^(needs:\n  enabled:) true", r"\1 false", cfg, count=1)
+    return cfg
+
+
+def init_config(repo, owner, templates_core, project, type_):
+    dst = os.path.join(repo, CONFIG)
+    if os.path.exists(dst):
+        sys.exit(f"{CONFIG} already exists: this repo is installed. Use plan/apply without --init.")
+    cfg = render(open(os.path.join(templates_core, CONFIG), "rb").read(), project, owner).decode()
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    open(dst, "w").write(set_type(cfg, type_))
+
+
+def roots_for(repo, templates_base):
+    """core, plus the profile of the type named in the repo's config."""
+    cfg = open(os.path.join(repo, CONFIG)).read()
+    t = (re.search(r"^type:\s*([\w-]+)", cfg, re.M) or [0, "web"])[1]
+    prof = os.path.join(templates_base, "profiles", t)
+    return [os.path.join(templates_base, "core")] + ([prof] if os.path.isdir(prof) else [])
+
+
 def plan(repo, owner, roots, version="?"):
     cfg = open(os.path.join(repo, CONFIG)).read()
     project = (re.search(r'^project:\s*"?([^"\n#]*[^"\s#])', cfg, re.M) or [0, os.path.basename(repo)])[1]
@@ -103,10 +135,10 @@ def plan(repo, owner, roots, version="?"):
         dst = os.path.join(repo, rel)
         if rel == CONFIG:
             text, added = merge_config(cfg, want.decode()); out["config"] = added; rendered[rel] = text.encode()
+        elif not os.path.exists(dst):
+            out["new"].append(rel)  # even an owned file is installed the first time; it is never touched after that
         elif rel in OWNED:
             out["owned"].append(rel)
-        elif not os.path.exists(dst):
-            out["new"].append(rel)
         else:
             have = open(dst, "rb").read()
             if have == want:
@@ -187,6 +219,28 @@ def test():
     assert plan(r, "justas", [t], "3")[0]["update"] == [".github/CODEOWNERS"]
     apply(r, "justas", [t], "3")
     assert rd(".github/CODEOWNERS") == "/.sdlc/ @justas\n"
+    # profiles: a later root overrides an earlier one, and adds its own files
+    prof = os.path.join(d, "prof")
+    W(prof, "a.txt", "A-profile\n"); W(prof, ".sdlc/profile.yml", "type: chrome-ext\n")
+    p3, rendered3, *_ = plan(r, "justas", [t, prof], "3")
+    assert rendered3["a.txt"] == b"A-profile\n" and ".sdlc/profile.yml" in p3["new"], p3
+    # init: the config is created from the template with the project and the type; a non-web type turns deploy off
+    base = os.path.join(d, "base"); W(os.path.join(base, "core"), CONFIG, 'project: "{{PROJECT_NAME}}"\ntype: web            # x\nneeds:\n  enabled: true\ndeploy:\n  provider: cloudflare-pages\n')
+    W(os.path.join(base, "core"), "n.txt", "n\n"); W(os.path.join(base, "profiles", "claude-plugin"), ".sdlc/profile.yml", "type: claude-plugin\n")
+    fresh = os.path.join(d, "fresh"); os.makedirs(fresh)
+    init_config(fresh, "justas", os.path.join(base, "core"), "plug", "claude-plugin")
+    c = open(os.path.join(fresh, CONFIG)).read()
+    assert 'project: "plug"' in c and "type: claude-plugin" in c and "provider: none" in c and "enabled: false" in c, c
+    assert roots_for(fresh, base) == [os.path.join(base, "core"), os.path.join(base, "profiles", "claude-plugin")]
+    apply(fresh, "justas", roots_for(fresh, base), "1")
+    assert os.path.exists(os.path.join(fresh, ".sdlc/profile.yml")) and os.path.exists(os.path.join(fresh, "n.txt"))
+    W(os.path.join(base, "core"), "docs/constitution.md", "# {{PROJECT_NAME}}\n")
+    apply(fresh, "justas", roots_for(fresh, base), "1")
+    assert open(os.path.join(fresh, "docs/constitution.md")).read() == "# plug\n"  # installed on a first run...
+    open(os.path.join(fresh, "docs/constitution.md"), "w").write("# mine\n")
+    apply(fresh, "justas", roots_for(fresh, base), "2")
+    assert open(os.path.join(fresh, "docs/constitution.md")).read() == "# mine\n"  # ...and never overwritten after that
+    assert set_type('type: web\nprovider: cloudflare-pages\n', "web") == 'type: web            # web | mobile | claude-plugin | chrome-ext\nprovider: cloudflare-pages\n'
     print("ok")
 
 
@@ -197,7 +251,12 @@ if __name__ == "__main__":
     else:
         mode, repo = a[0], os.path.abspath(a[1])
         opt = lambda k, d=None: a[a.index(k) + 1] if k in a else d
-        roots = [a[i + 1] for i, x in enumerate(a) if x == "--templates"] or [os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "templates", "core")]
+        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "templates")
+        if "--init" in a:
+            if opt("--type") not in PROFILES:
+                sys.exit(f"--type must be one of {', '.join(PROFILES)}")
+            init_config(repo, opt("--owner", ""), os.path.join(base, "core"), opt("--project") or os.path.basename(repo), opt("--type"))
+        roots = [a[i + 1] for i, x in enumerate(a) if x == "--templates"] or roots_for(repo, base)
         pj = os.path.join(roots[0], "..", "..", ".claude-plugin", "plugin.json")
         version = json.load(open(pj))["version"] if os.path.exists(pj) else "?"
         if mode == "plan":

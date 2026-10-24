@@ -9,39 +9,56 @@ permissions:
   contents: read
 jobs:
   checks:
-    # The deterministic gate: typecheck, lint and tests decide whether a change can merge.
+    # The deterministic gate. What runs comes from .sdlc/profile.yml (the web defaults when that file is missing).
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Skip before the scaffold
-        id: pkg
+      - name: Read the profile
+        id: profile
         run: |
-          if [ -f package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
-          else echo "No package.json yet, nothing to check." >> "$GITHUB_STEP_SUMMARY"; fi
+          p=.sdlc/profile.yml
+          if [ -f "$p" ]; then
+            echo "node=$(yq '.node // true' "$p")" >> "$GITHUB_OUTPUT"
+            echo "scripts=$(yq '(.scripts // []) | join(" ")' "$p")" >> "$GITHUB_OUTPUT"
+          else
+            echo "node=true" >> "$GITHUB_OUTPUT"; echo "scripts=typecheck lint test" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f package.json ]; then echo "pkg=true" >> "$GITHUB_OUTPUT"
+          else echo "No package.json yet, so no npm scripts to run." >> "$GITHUB_STEP_SUMMARY"; fi
 
-      - if: steps.pkg.outputs.present == 'true'
+      - if: steps.profile.outputs.node == 'true' && steps.profile.outputs.pkg == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
 
-      - if: steps.pkg.outputs.present == 'true'
+      - if: steps.profile.outputs.node == 'true' && steps.profile.outputs.pkg == 'true'
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Required scripts exist
-        if: steps.pkg.outputs.present == 'true'
+        if: steps.profile.outputs.pkg == 'true'
+        env:
+          SCRIPTS: ${{ steps.profile.outputs.scripts }}
         run: |
-          for s in typecheck lint test; do
+          for s in $SCRIPTS; do
             jq -e --arg s "$s" '.scripts[$s]' package.json >/dev/null || { echo "::error::package.json has no \"$s\" script"; exit 1; }
           done
 
-      - if: steps.pkg.outputs.present == 'true'
-        run: npm run typecheck
-      - if: steps.pkg.outputs.present == 'true'
-        run: npm run lint
-      - if: steps.pkg.outputs.present == 'true'
-        run: npm test
+      - name: Run the scripts
+        if: steps.profile.outputs.pkg == 'true'
+        env:
+          SCRIPTS: ${{ steps.profile.outputs.scripts }}
+        run: for s in $SCRIPTS; do echo "::group::npm run $s"; npm run "$s"; echo "::endgroup::"; done
+
+      - name: Profile setup and commands
+        run: |
+          p=.sdlc/profile.yml
+          [ -f "$p" ] || exit 0
+          setup=$(yq '.setup // ""' "$p")
+          if [ -n "$setup" ]; then bash -c "$setup"; fi
+          mapfile -t cmds < <(yq '(.commands // [])[]' "$p")
+          for c in "${cmds[@]}"; do echo "::group::$c"; bash -c "$c"; echo "::endgroup::"; done
 
   secrets:
     # Scans the commits of a PR (or the whole history on main) for committed secrets. A hit blocks the merge.
@@ -107,6 +124,41 @@ jobs:
           npm run build
           npx --yes wrangler@4 pages project create "$PROJECT" --production-branch main 2>/dev/null || echo "Project exists."
           npx --yes wrangler@4 pages deploy "$DIR" --project-name "$PROJECT" --branch main --commit-dirty=true | tee -a "$GITHUB_STEP_SUMMARY"
+
+  package:
+    # Chrome extension profile: zip the build as an artifact once checks pass on main. Uploading to the store is always the owner.
+    needs: [checks, secrets]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: cfg
+        run: |
+          if [ ! -f .sdlc/profile.yml ] || [ "$(yq '.release // ""' .sdlc/profile.yml)" != package ]; then echo "This profile does not package."; exit 0; fi
+          if [ ! -f package.json ]; then echo "No package.json yet. Nothing to package."; exit 0; fi
+          echo "dir=$(yq '.package_dir // "dist"' .sdlc/profile.yml)" >> "$GITHUB_OUTPUT"
+
+      - if: steps.cfg.outputs.dir != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Build and zip
+        if: steps.cfg.outputs.dir != ''
+        env:
+          DIR: ${{ steps.cfg.outputs.dir }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build --if-present
+          (cd "$DIR" && zip -qr "$GITHUB_WORKSPACE/extension.zip" .)
+
+      - if: steps.cfg.outputs.dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: extension.zip
 
   scope:
     # Tripwire: a task PR that grew past its task stops and goes to the owner.

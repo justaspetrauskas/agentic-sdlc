@@ -1,0 +1,7 @@
+type: claude-plugin
+node: true
+scripts: [test]       # skipped when the plugin has no package.json
+setup: npm install --global @anthropic-ai/claude-code   # the CLI that validates the plugin; free, no login needed
+commands:
+  - claude plugin validate .
+release: tag          # tag a version and push it; users update through the marketplace
