@@ -2,7 +2,7 @@
 
 Usage: python3 upgrade.py plan  <repo> [--owner NAME] [--templates DIR ...]        print the plan as JSON, change nothing
        python3 upgrade.py apply <repo> [--owner NAME] [--templates DIR ...] [--take PATH,PATH]   write files and the manifest
-       python3 upgrade.py apply <repo> --init --project NAME --type web|mobile|claude-plugin|chrome-ext --owner NAME   first install
+       python3 upgrade.py apply <repo> --init --project NAME --type web|mobile|claude-plugin|chrome-ext --owner NAME [--control-issue N]   first install
        python3 upgrade.py --test
 Templates are core plus the profile of the repo's `type:` (templates/profiles/<type>); later directories override earlier ones.
 Git, the branch and the PR are the caller's job.
@@ -106,12 +106,14 @@ def set_type(cfg, type_):
     return cfg
 
 
-def init_config(repo, owner, templates_core, project, type_):
+def init_config(repo, owner, templates_core, project, type_, control_issue=None):
     dst = os.path.join(repo, CONFIG)
     if os.path.exists(dst):
         sys.exit(f"{CONFIG} already exists: this repo is installed. Use plan/apply without --init.")
     cfg = render(open(os.path.join(templates_core, CONFIG), "rb").read(), project, owner).decode()
     os.makedirs(os.path.dirname(dst), exist_ok=True)
+    if control_issue:
+        cfg = re.sub(r"(?m)^control_issue:.*$", f"control_issue: {int(control_issue)}", cfg, count=1)
     open(dst, "w").write(set_type(cfg, type_))
 
 
@@ -228,9 +230,10 @@ def test():
     base = os.path.join(d, "base"); W(os.path.join(base, "core"), CONFIG, 'project: "{{PROJECT_NAME}}"\ntype: web            # x\nneeds:\n  enabled: true\ndeploy:\n  provider: cloudflare-pages\n')
     W(os.path.join(base, "core"), "n.txt", "n\n"); W(os.path.join(base, "profiles", "claude-plugin"), ".sdlc/profile.yml", "type: claude-plugin\n")
     fresh = os.path.join(d, "fresh"); os.makedirs(fresh)
-    init_config(fresh, "justas", os.path.join(base, "core"), "plug", "claude-plugin")
+    W(os.path.join(base, "core"), CONFIG, 'project: "{{PROJECT_NAME}}"\ntype: web            # x\ncontrol_issue: 0   # set by init\nneeds:\n  enabled: true\ndeploy:\n  provider: cloudflare-pages\n')
+    init_config(fresh, "justas", os.path.join(base, "core"), "plug", "claude-plugin", 7)
     c = open(os.path.join(fresh, CONFIG)).read()
-    assert 'project: "plug"' in c and "type: claude-plugin" in c and "provider: none" in c and "enabled: false" in c, c
+    assert "control_issue: 7" in c and 'project: "plug"' in c and "type: claude-plugin" in c and "provider: none" in c and "enabled: false" in c, c
     assert roots_for(fresh, base) == [os.path.join(base, "core"), os.path.join(base, "profiles", "claude-plugin")]
     apply(fresh, "justas", roots_for(fresh, base), "1")
     assert os.path.exists(os.path.join(fresh, ".sdlc/profile.yml")) and os.path.exists(os.path.join(fresh, "n.txt"))
@@ -255,7 +258,7 @@ if __name__ == "__main__":
         if "--init" in a:
             if opt("--type") not in PROFILES:
                 sys.exit(f"--type must be one of {', '.join(PROFILES)}")
-            init_config(repo, opt("--owner", ""), os.path.join(base, "core"), opt("--project") or os.path.basename(repo), opt("--type"))
+            init_config(repo, opt("--owner", ""), os.path.join(base, "core"), opt("--project") or os.path.basename(repo), opt("--type"), opt("--control-issue"))
         roots = [a[i + 1] for i, x in enumerate(a) if x == "--templates"] or roots_for(repo, base)
         pj = os.path.join(roots[0], "..", "..", ".claude-plugin", "plugin.json")
         version = json.load(open(pj))["version"] if os.path.exists(pj) else "?"

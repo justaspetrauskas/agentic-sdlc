@@ -17,13 +17,14 @@ before changing anything. Never push to the default branch.
    store upload is always you). Default: web.
 4. List what will be created: the files under `$PLUGIN/templates/core` plus `$PLUGIN/templates/profiles/<type>`
    (the profile overrides core where both have a file). Say how many files and name the notable ones. Wait for a yes.
-5. Create the branch `chore/technical/sdlc-init`. Run
-   `python3 $PLUGIN/scripts/upgrade.py apply . --init --project <name> --type <type> --owner <owner>`.
-   It creates `.sdlc/config.yml` (with `dry_run: true`, the type, and deploy and needs set for that type), copies every file with
-   its placeholders filled in, and writes `.sdlc/manifest.json`. It never overwrites an existing file; report any it skipped.
-6. Create the labels from `.github/labels.yml` using `gh label create <name> --color <color> --description <text> --force`.
-7. Create an issue titled "SDLC control" with a short body explaining that adding the PAUSE label stops the pipeline.
-   Write its number into `.sdlc/config.yml` as `control_issue`.
+5. Create the labels from `.github/labels.yml` in the plugin's `templates/core` using
+   `gh label create <name> --color <color> --description <text> --force`, then create an issue titled "SDLC control" with a short body
+   explaining that adding the PAUSE label stops the pipeline. Note its number.
+6. Create the branch `chore/technical/sdlc-init`. Run
+   `python3 $PLUGIN/scripts/upgrade.py apply . --init --project <name> --type <type> --owner <owner> --control-issue <number>`.
+   It creates `.sdlc/config.yml` (with `dry_run: true`, the type, the control issue, and deploy and needs set for that type), copies every
+   file with its placeholders filled in, and writes `.sdlc/manifest.json`. It never overwrites an existing file; report any it skipped.
+7. Check `git status`: the new files should be all that changed.
 8. Commit with the message "Add agentic SDLC core", push the branch, and open a PR with `gh pr create`. Do not merge it.
 9. Ask whether to set branch protection on the default branch: require a pull request, require code owner reviews,
    do not enforce for admins. If the user agrees, apply it with `gh api`. If GitHub refuses (some plans do not offer

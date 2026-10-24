@@ -2,6 +2,9 @@
 
 Plugin releases, newest first. A project changes only when you run `/sdlc-upgrade`.
 
+## 0.1.39 - 2026-10-24
+- S4: init writes control_issue itself (--control-issue); claude-plugin profile explains the validator's optional warnings
+
 ## 0.1.38 - 2026-10-24
 - S3: profiles (web, mobile, claude-plugin, chrome-ext) read by CI and the prompts; upgrade.py installs and upgrades by profile; sdlc-init uses it
 
